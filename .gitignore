@@ -1,0 +1,34 @@
+# Build outputs
+cpp/build/
+*.o
+*.so
+*.dylib
+*.mex*
+*.mexa64
+*.mexmaci64
+*.mexw64
+
+# MATLAB
+matlab/models/*.slx
+matlab/models/*.slxc
+matlab/**/*.slxc
+slprj/
+*.autosave
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/settings.json
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Bridge temp files
+/tmp/pmsm_bridge/

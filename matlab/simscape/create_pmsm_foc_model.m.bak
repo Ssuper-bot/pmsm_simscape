@@ -1,0 +1,277 @@
+function create_pmsm_foc_model(model_name, motor_params, inv_params, ctrl_params, sim_params, ref_params)
+%CREATE_PMSM_FOC_MODEL Programmatically create a PMSM FOC Simscape model
+%
+% This function creates a Simulink/Simscape model with:
+%   - PMSM motor block (Simscape Electrical)
+%   - Three-phase inverter with PWM
+%   - FOC controller subsystem (Clarke/Park transforms, PI controllers, SVPWM)
+%   - Speed & current measurement
+%   - Mechanical load
+%   - Scopes for visualization
+%
+% The model is structured for both:
+%   1. Pure MATLAB/Simscape simulation
+%   2. Integration with C++ S-Function controller (optional drop-in replacement)
+
+    %% Create new model
+    if bdIsLoaded(model_name)
+        close_system(model_name, 0);
+    end
+    new_system(model_name);
+    open_system(model_name);
+    
+    % Set solver for Simscape (ode23t / ode15s are recommended)
+    set_param(model_name, ...
+        'Solver', sim_params.solver, ...
+        'StopTime', num2str(sim_params.t_end), ...
+        'MaxStep', num2str(sim_params.max_step), ...
+        'RelTol', '1e-4', ...
+        'AbsTol', '1e-6');
+    
+    %% ===== Create Subsystem Blocks =====
+    
+    % --- Power Stage Subsystem ---
+    power_stage = [model_name '/Power Stage'];
+    add_block('built-in/Subsystem', power_stage);
+    create_power_stage(power_stage, inv_params);
+    set_param(power_stage, 'Position', [300 150 450 300]);
+    
+    % --- PMSM Motor Block ---
+    pmsm_block = [model_name '/PMSM Motor'];
+    try
+        % Try Simscape Electrical PMSM block
+        add_block('ee_lib/Electromechanical/Permanent Magnet/Permanent Magnet Synchronous Motor', pmsm_block);
+    catch
+        % Fallback: try alternative library path
+        try
+            add_block('simscapeelectrical/Machines/Permanent Magnet Synchronous Motor', pmsm_block);
+        catch
+            warning('Simscape Electrical library not found. Creating placeholder subsystem.');
+            add_block('built-in/Subsystem', pmsm_block);
+            create_pmsm_placeholder(pmsm_block, motor_params);
+        end
+    end
+    set_param(pmsm_block, 'Position', [550 150 700 300]);
+    
+    % --- FOC Controller Subsystem ---
+    foc_ctrl = [model_name '/FOC Controller'];
+    add_block('built-in/Subsystem', foc_ctrl);
+    create_foc_controller_subsystem(foc_ctrl, ctrl_params, sim_params);
+    set_param(foc_ctrl, 'Position', [100 150 250 350]);
+    
+    % --- Measurement Subsystem ---
+    meas_block = [model_name '/Measurements'];
+    add_block('built-in/Subsystem', meas_block);
+    create_measurement_subsystem(meas_block);
+    set_param(meas_block, 'Position', [550 350 700 500]);
+    
+    % --- Mechanical Load ---
+    load_block = [model_name '/Mechanical Load'];
+    add_block('built-in/Subsystem', load_block);
+    create_mechanical_load(load_block, ref_params);
+    set_param(load_block, 'Position', [800 150 950 300]);
+    
+    % --- Reference Generator ---
+    ref_gen = [model_name '/Reference Generator'];
+    add_block('built-in/Subsystem', ref_gen);
+    create_reference_generator(ref_gen, ref_params);
+    set_param(ref_gen, 'Position', [100 20 250 100]);
+    
+    % --- Scopes ---
+    create_scopes(model_name);
+    
+    %% ===== Connect Blocks =====
+    % Note: Exact connections depend on port naming.
+    % This creates the logical structure; manual connection may be needed
+    % for Simscape physical signal routing.
+    
+    % Add annotation
+    try
+        ann = Simulink.Annotation([model_name '/PMSM FOC Simscape Model - Auto-generated. Review connections before simulation.']);
+        ann.Position = [350 450];
+    catch
+        % Annotation API may differ across MATLAB versions, skip if fails
+    end
+    
+    %% Save model
+    model_dir = fullfile(fileparts(mfilename('fullpath')), '..', 'models');
+    if ~exist(model_dir, 'dir')
+        mkdir(model_dir);
+    end
+    save_system(model_name, fullfile(model_dir, [model_name '.slx']));
+    fprintf('Model saved to: %s\n', fullfile(model_dir, [model_name '.slx']));
+end
+
+%% ===================== Helper Functions =====================
+
+function create_power_stage(subsys, inv_params)
+%CREATE_POWER_STAGE Create three-phase inverter subsystem
+    % This creates a simplified average-model inverter
+    % For detailed switching model, use Simscape Electrical IGBT/MOSFET blocks
+    
+    % Input ports: PWM duty cycles (da, db, dc), DC bus
+    add_block('built-in/Inport', [subsys '/duty_abc'], 'Port', '1');
+    add_block('built-in/Inport', [subsys '/Vdc'], 'Port', '2');
+    
+    % Output ports: Three-phase voltages
+    add_block('built-in/Outport', [subsys '/Va'], 'Port', '1');
+    add_block('built-in/Outport', [subsys '/Vb'], 'Port', '2');
+    add_block('built-in/Outport', [subsys '/Vc'], 'Port', '3');
+    
+    % Gain block: duty * Vdc
+    add_block('simulink/Math Operations/Product', [subsys '/Modulator'], 'Position', [200 100 250 130]);
+    add_block('simulink/Signal Routing/Demux', [subsys '/Demux'], 'Position', [300 80 310 160], 'Outputs', '3');
+    
+    % Connections
+    add_line(subsys, 'duty_abc/1', 'Modulator/1');
+    add_line(subsys, 'Vdc/1', 'Modulator/2');
+    add_line(subsys, 'Modulator/1', 'Demux/1');
+    add_line(subsys, 'Demux/1', 'Va/1');
+    add_line(subsys, 'Demux/2', 'Vb/1');
+    add_line(subsys, 'Demux/3', 'Vc/1');
+end
+
+function create_foc_controller_subsystem(subsys, ctrl_params, sim_params)
+%CREATE_FOC_CONTROLLER_SUBSYSTEM Create FOC controller subsystem
+% Contains: Clarke, Park, PI controllers, Inverse Park, SVPWM
+    
+    % === Input Ports ===
+    add_block('built-in/Inport', [subsys '/ia'], 'Port', '1');
+    add_block('built-in/Inport', [subsys '/ib'], 'Port', '2');
+    add_block('built-in/Inport', [subsys '/ic'], 'Port', '3');
+    add_block('built-in/Inport', [subsys '/theta_e'], 'Port', '4');
+    add_block('built-in/Inport', [subsys '/omega_m'], 'Port', '5');
+    add_block('built-in/Inport', [subsys '/speed_ref'], 'Port', '6');
+    add_block('built-in/Inport', [subsys '/id_ref'], 'Port', '7');
+    
+    % === Output Ports ===
+    add_block('built-in/Outport', [subsys '/duty_abc'], 'Port', '1');
+    add_block('built-in/Outport', [subsys '/id_meas'], 'Port', '2');
+    add_block('built-in/Outport', [subsys '/iq_meas'], 'Port', '3');
+    
+    % === Clarke Transform (abc -> alpha-beta) ===
+    clarke = [subsys '/Clarke Transform'];
+    add_block('simulink/User-Defined Functions/MATLAB Fcn', clarke, ...
+        'MATLABFcn', 'clarke_transform', ...
+        'Position', [100 100 200 140]);
+    
+    % === Park Transform (alpha-beta -> dq) ===
+    park = [subsys '/Park Transform'];
+    add_block('simulink/User-Defined Functions/MATLAB Fcn', park, ...
+        'MATLABFcn', 'park_transform', ...
+        'Position', [250 100 350 140]);
+    
+    % === Speed PI Controller ===
+    speed_pi = [subsys '/Speed PI'];
+    add_block('simulink/Continuous/PID Controller', speed_pi, ...
+        'Controller', 'PI', ...
+        'P', num2str(ctrl_params.Kp_speed), ...
+        'I', num2str(ctrl_params.Ki_speed), ...
+        'Position', [100 200 200 240]);
+    
+    % === d-axis Current PI Controller ===
+    id_pi = [subsys '/Id PI'];
+    add_block('simulink/Continuous/PID Controller', id_pi, ...
+        'Controller', 'PI', ...
+        'P', num2str(ctrl_params.Kp_id), ...
+        'I', num2str(ctrl_params.Ki_id), ...
+        'Position', [400 100 500 140]);
+    
+    % === q-axis Current PI Controller ===
+    iq_pi = [subsys '/Iq PI'];
+    add_block('simulink/Continuous/PID Controller', iq_pi, ...
+        'Controller', 'PI', ...
+        'P', num2str(ctrl_params.Kp_iq), ...
+        'I', num2str(ctrl_params.Ki_iq), ...
+        'Position', [400 200 500 240]);
+    
+    % === Inverse Park Transform (dq -> alpha-beta) ===
+    inv_park = [subsys '/Inverse Park'];
+    add_block('simulink/User-Defined Functions/MATLAB Fcn', inv_park, ...
+        'MATLABFcn', 'inv_park_transform', ...
+        'Position', [550 100 650 140]);
+    
+    % === SVPWM (alpha-beta -> duty cycles) ===
+    svpwm = [subsys '/SVPWM'];
+    add_block('simulink/User-Defined Functions/MATLAB Fcn', svpwm, ...
+        'MATLABFcn', 'svpwm_modulator', ...
+        'Position', [700 100 800 140]);
+end
+
+function create_pmsm_placeholder(subsys, motor_params)
+%CREATE_PMSM_PLACEHOLDER Create PMSM model when Simscape Electrical unavailable
+    add_block('built-in/Inport', [subsys '/Va'], 'Port', '1');
+    add_block('built-in/Inport', [subsys '/Vb'], 'Port', '2');
+    add_block('built-in/Inport', [subsys '/Vc'], 'Port', '3');
+    
+    add_block('built-in/Outport', [subsys '/ia'], 'Port', '1');
+    add_block('built-in/Outport', [subsys '/ib'], 'Port', '2');
+    add_block('built-in/Outport', [subsys '/ic'], 'Port', '3');
+    add_block('built-in/Outport', [subsys '/theta_e'], 'Port', '4');
+    add_block('built-in/Outport', [subsys '/omega_m'], 'Port', '5');
+    add_block('built-in/Outport', [subsys '/Te'], 'Port', '6');
+    
+    % Add MATLAB Function block implementing dq-frame PMSM equations
+    add_block('simulink/User-Defined Functions/MATLAB Fcn', [subsys '/PMSM Equations'], ...
+        'MATLABFcn', 'pmsm_dq_model', ...
+        'Position', [200 100 350 200]);
+end
+
+function create_measurement_subsystem(subsys)
+%CREATE_MEASUREMENT_SUBSYSTEM Create current and position measurement
+    add_block('built-in/Inport', [subsys '/ia'], 'Port', '1');
+    add_block('built-in/Inport', [subsys '/ib'], 'Port', '2');
+    add_block('built-in/Inport', [subsys '/ic'], 'Port', '3');
+    add_block('built-in/Inport', [subsys '/theta_m'], 'Port', '4');
+    
+    add_block('built-in/Outport', [subsys '/ia_meas'], 'Port', '1');
+    add_block('built-in/Outport', [subsys '/ib_meas'], 'Port', '2');
+    add_block('built-in/Outport', [subsys '/ic_meas'], 'Port', '3');
+    add_block('built-in/Outport', [subsys '/theta_e'], 'Port', '4');
+    add_block('built-in/Outport', [subsys '/omega_m'], 'Port', '5');
+end
+
+function create_mechanical_load(subsys, ref_params)
+%CREATE_MECHANICAL_LOAD Create mechanical load subsystem
+    add_block('built-in/Inport', [subsys '/shaft'], 'Port', '1');
+    add_block('built-in/Outport', [subsys '/shaft_out'], 'Port', '1');
+    
+    % Step load torque
+    add_block('simulink/Sources/Step', [subsys '/Load Step'], ...
+        'Time', num2str(ref_params.load_step_time), ...
+        'After', num2str(ref_params.load_torque), ...
+        'Position', [100 100 150 130]);
+end
+
+function create_reference_generator(subsys, ref_params)
+%CREATE_REFERENCE_GENERATOR Create speed/current reference signals
+    % Speed reference with ramp
+    add_block('built-in/Outport', [subsys '/speed_ref'], 'Port', '1');
+    add_block('built-in/Outport', [subsys '/id_ref'], 'Port', '2');
+    
+    % Ramp to target speed
+    add_block('simulink/Sources/Ramp', [subsys '/Speed Ramp'], ...
+        'Slope', num2str(ref_params.speed_ref / ref_params.speed_ramp_time), ...
+        'Position', [50 30 120 60]);
+    add_block('simulink/Discontinuities/Saturation', [subsys '/Speed Sat'], ...
+        'UpperLimit', num2str(ref_params.speed_ref), ...
+        'LowerLimit', '0', ...
+        'Position', [160 30 220 60]);
+    add_block('built-in/Constant', [subsys '/Id Ref'], ...
+        'Value', num2str(ref_params.id_ref), ...
+        'Position', [100 90 150 110]);
+    
+    add_line(subsys, 'Speed Ramp/1', 'Speed Sat/1');
+    add_line(subsys, 'Speed Sat/1', 'speed_ref/1');
+    add_line(subsys, 'Id Ref/1', 'id_ref/1');
+end
+
+function create_scopes(model_name)
+%CREATE_SCOPES Add visualization scopes
+    add_block('simulink/Sinks/Scope', [model_name '/Speed Scope'], ...
+        'Position', [1000 50 1060 100]);
+    add_block('simulink/Sinks/Scope', [model_name '/Current Scope'], ...
+        'Position', [1000 150 1060 200]);
+    add_block('simulink/Sinks/Scope', [model_name '/Torque Scope'], ...
+        'Position', [1000 250 1060 300]);
+end

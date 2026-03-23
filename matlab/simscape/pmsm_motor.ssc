@@ -1,0 +1,89 @@
+component pmsm_motor
+% Permanent Magnet Synchronous Motor (PMSM)
+% Three-phase PMSM model in Simscape domain.
+% Implements the electrical and mechanical dynamics in dq reference frame.
+
+nodes
+    a = foundation.electrical.electrical;   % a:left
+    b = foundation.electrical.electrical;   % b:left
+    c = foundation.electrical.electrical;   % c:left
+    R = foundation.mechanical.rotational.rotational;  % R:right
+    C = foundation.mechanical.rotational.rotational;  % C:right
+end
+
+parameters
+    Rs   = {0.5,    'Ohm'};     % Stator resistance
+    Ld   = {1.4e-3, 'H'};      % d-axis inductance
+    Lq   = {1.4e-3, 'H'};      % q-axis inductance
+    psi_m = {0.0577, 'Wb'};    % PM flux linkage
+    p    = {4,      '1'};       % Number of pole pairs
+    J    = {1.74e-5,'kg*m^2'}; % Rotor inertia
+    B_visc = {1e-4, 'N*m*s/rad'}; % Viscous friction
+end
+
+variables
+    ia = {0, 'A'};              % Phase A current
+    ib = {0, 'A'};              % Phase B current
+    ic = {0, 'A'};              % Phase C current
+    va = {0, 'V'};              % Phase A voltage
+    vb = {0, 'V'};              % Phase B voltage
+    vc = {0, 'V'};              % Phase C voltage
+    w  = {0, 'rad/s'};          % Rotor angular velocity
+    theta = {0, 'rad'};         % Rotor electrical angle
+    torque = {0, 'N*m'};        % Electromagnetic torque
+end
+
+branches
+    ia : a.i -> *;
+    ib : b.i -> *;
+    ic : c.i -> *;
+    torque : R.t -> C.t;
+end
+
+equations
+    % Terminal voltages
+    va == a.v - 0;
+    vb == b.v - 0;
+    vc == c.v - 0;
+    
+    % Mechanical speed from rotational ports
+    w == R.w - C.w;
+    
+    % Electrical angle
+    theta.der == p * w;
+    
+    % Clarke transform (abc -> alpha-beta)
+    let
+        k = 2/3;
+        sqrt3_2 = sqrt(3)/2;
+        i_alpha = k * (ia - 0.5*ib - 0.5*ic);
+        i_beta  = k * (sqrt3_2*ib - sqrt3_2*ic);
+        
+        % Park transform (alpha-beta -> dq) 
+        cos_t = cos(theta);
+        sin_t = sin(theta);
+        id =  i_alpha * cos_t + i_beta * sin_t;
+        iq = -i_alpha * sin_t + i_beta * cos_t;
+        
+        % Electrical angular velocity
+        we = p * w;
+        
+        % dq voltages from terminal voltages via transforms
+        v_alpha = k * (va - 0.5*vb - 0.5*vc);
+        v_beta  = k * (sqrt3_2*vb - sqrt3_2*vc);
+        vd =  v_alpha * cos_t + v_beta * sin_t;
+        vq = -v_alpha * sin_t + v_beta * cos_t;
+    in
+        % Voltage equations in dq frame
+        vd == Rs*id + Ld*id.der - we*Lq*iq;
+        vq == Rs*iq + Lq*iq.der + we*Ld*id + we*psi_m;
+        
+        % Electromagnetic torque
+        torque == 1.5 * p * (psi_m*iq + (Ld - Lq)*id*iq);
+        
+        % Third phase constraint (balanced)
+        ia + ib + ic == 0;
+    end
+end
+
+end

@@ -1,0 +1,13 @@
+[project]
+name = "pmsm-ros2"
+version = "0.1.0"
+description = "PMSM FOC Controller with ROS2 integration"
+requires-python = ">=3.8"
+
+[project.scripts]
+pmsm-foc-node = "pmsm_ros2.foc_node:main"
+pmsm-matlab-bridge = "pmsm_ros2.matlab_bridge:main"
+
+[build-system]
+requires = ["setuptools>=45"]
+build-backend = "setuptools.backends._legacy:_Backend"
