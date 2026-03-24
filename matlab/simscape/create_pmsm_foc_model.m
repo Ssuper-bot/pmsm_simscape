@@ -36,7 +36,7 @@ function create_pmsm_foc_model(model_name, motor_params, inv_params, ctrl_params
     % --- FOC Controller Subsystem ---
     foc_ctrl = [model_name '/FOC Controller'];
     add_block('built-in/Subsystem', foc_ctrl);
-    create_foc_controller_subsystem(foc_ctrl, ctrl_params, inv_params);
+    create_foc_controller_subsystem(foc_ctrl, ctrl_params, inv_params, motor_params, sim_params);
     set_param(foc_ctrl, 'Position', [50 180 250 530]);
 
     % --- Power Stage Subsystem ---
@@ -60,7 +60,7 @@ function create_pmsm_foc_model(model_name, motor_params, inv_params, ctrl_params
     % --- Measurements ---
     meas_block = [model_name '/Measurements'];
     add_block('built-in/Subsystem', meas_block);
-    create_measurement_subsystem(meas_block, motor_params);
+    create_measurement_subsystem(meas_block, motor_params, sim_params);
     set_param(meas_block, 'Position', [600 460 780 620]);
 
     % --- Scopes ---
@@ -156,10 +156,20 @@ function create_power_stage(subsys, inv_params)
     add_line(subsys, 'Demux/3', 'Vc/1');
 end
 
-function create_foc_controller_subsystem(subsys, ctrl_params, inv_params)
+function create_foc_controller_subsystem(subsys, ctrl_params, inv_params, motor_params, sim_params)
 %CREATE_FOC_CONTROLLER_SUBSYSTEM Fully-wired FOC controller
 %   Inputs:  1:ia  2:ib  3:ic  4:theta_e  5:omega_m  6:speed_ref  7:id_ref
 %   Outputs: 1:duty_abc[3x1]  2:id_meas  3:iq_meas
+
+    controller_mode = 'sfun';
+    if isfield(sim_params, 'controller_mode')
+        controller_mode = sim_params.controller_mode;
+    end
+
+    if strcmpi(controller_mode, 'sfun')
+        create_foc_controller_sfunction(subsys, ctrl_params, inv_params, motor_params, sim_params);
+        return;
+    end
 
     % === Input Ports ===
     add_block('built-in/Inport', [subsys '/ia'],        'Port', '1');
@@ -292,6 +302,70 @@ function create_foc_controller_subsystem(subsys, ctrl_params, inv_params)
     add_line(subsys, 'SVPWM/1', 'duty_abc/1');
 end
 
+function create_foc_controller_sfunction(subsys, ctrl_params, inv_params, motor_params, sim_params)
+%CREATE_FOC_CONTROLLER_SFUNCTION C++ S-Function based FOC controller wrapper
+%   Inputs:  1:ia  2:ib  3:ic  4:theta_e  5:omega_m  6:speed_ref  7:id_ref
+%   Outputs: 1:duty_abc[3x1]  2:id_meas  3:iq_meas
+
+    add_block('built-in/Inport', [subsys '/ia'],        'Port', '1');
+    add_block('built-in/Inport', [subsys '/ib'],        'Port', '2');
+    add_block('built-in/Inport', [subsys '/ic'],        'Port', '3');
+    add_block('built-in/Inport', [subsys '/theta_e'],   'Port', '4');
+    add_block('built-in/Inport', [subsys '/omega_m'],   'Port', '5');
+    add_block('built-in/Inport', [subsys '/speed_ref'], 'Port', '6');
+    add_block('built-in/Inport', [subsys '/id_ref'],    'Port', '7');
+
+    add_block('built-in/Outport', [subsys '/duty_abc'], 'Port', '1');
+    add_block('built-in/Outport', [subsys '/id_meas'],  'Port', '2');
+    add_block('built-in/Outport', [subsys '/iq_meas'],  'Port', '3');
+
+    add_block('simulink/Signal Routing/Mux', [subsys '/Mux_in'], ...
+        'Inputs', '7', 'Position', [120 90 130 240]);
+
+    Ts = sim_params.Ts_control;
+
+    % Parameters for sfun_foc_controller, in order:
+    % [Ts, Vdc, Kp_id, Ki_id, Kp_iq, Ki_iq, Kp_speed, Ki_speed, ...
+    %  Rs, Ld, Lq, flux_pm, p, iq_max, id_max]
+    param_values = [ ...
+        Ts, ...
+        inv_params.Vdc, ...
+        ctrl_params.Kp_id, ctrl_params.Ki_id, ...
+        ctrl_params.Kp_iq, ctrl_params.Ki_iq, ...
+        ctrl_params.Kp_speed, ctrl_params.Ki_speed, ...
+        motor_params.Rs, motor_params.Ld, motor_params.Lq, motor_params.flux_pm, ...
+        motor_params.p, ctrl_params.iq_max, ctrl_params.id_max ...
+    ];
+
+    % Generate a robust format string matching the number of parameters
+    fmt = repmat('%.12g,', 1, numel(param_values));
+    fmt(end) = [];  % remove trailing comma
+
+    params = sprintf(fmt, param_values);
+    add_block('simulink/User-Defined Functions/S-Function', [subsys '/FOC_SFun'], ...
+        'FunctionName', 'sfun_foc_controller', ...
+        'Parameters', params, ...
+        'Position', [220 120 380 210]);
+
+    add_block('simulink/Signal Routing/Demux', [subsys '/Demux_out'], ...
+        'Outputs', '5', 'Position', [440 120 450 220]);
+
+    add_line(subsys, 'ia/1', 'Mux_in/1');
+    add_line(subsys, 'ib/1', 'Mux_in/2');
+    add_line(subsys, 'ic/1', 'Mux_in/3');
+    add_line(subsys, 'theta_e/1', 'Mux_in/4');
+    add_line(subsys, 'omega_m/1', 'Mux_in/5');
+    add_line(subsys, 'speed_ref/1', 'Mux_in/6');
+    add_line(subsys, 'id_ref/1', 'Mux_in/7');
+
+    add_line(subsys, 'Mux_in/1', 'FOC_SFun/1');
+    add_line(subsys, 'FOC_SFun/1', 'Demux_out/1');
+
+    add_line(subsys, 'Demux_out/1', 'duty_abc/1');
+    add_line(subsys, 'Demux_out/4', 'id_meas/1');
+    add_line(subsys, 'Demux_out/5', 'iq_meas/1');
+end
+
 function create_pmsm_subsystem(subsys, motor_params, sim_params)
 %CREATE_PMSM_SUBSYSTEM PMSM motor using integrator-based state equations
 %   Inputs:  1:Va  2:Vb  3:Vc  4:Te_load
@@ -375,33 +449,98 @@ function create_pmsm_subsystem(subsys, motor_params, sim_params)
     add_line(subsys, 'Int_theta/1', 'theta_m/1');
 end
 
-function create_measurement_subsystem(subsys, motor_params)
+function create_measurement_subsystem(subsys, motor_params, sim_params)
 %CREATE_MEASUREMENT_SUBSYSTEM Pass-through currents + theta_e + omega_m
 %   Inputs:  1:ia  2:ib  3:ic  4:theta_m  5:omega_m
 %   Outputs: 1:ia_meas  2:ib_meas  3:ic_meas  4:theta_e  5:omega_m
 
-    add_block('built-in/Inport',  [subsys '/ia'],      'Port', '1');
-    add_block('built-in/Inport',  [subsys '/ib'],      'Port', '2');
-    add_block('built-in/Inport',  [subsys '/ic'],      'Port', '3');
-    add_block('built-in/Inport',  [subsys '/theta_m'], 'Port', '4');
-    add_block('built-in/Inport',  [subsys '/omega_m_in'], 'Port', '5');
-    add_block('built-in/Outport', [subsys '/ia_meas'], 'Port', '1');
-    add_block('built-in/Outport', [subsys '/ib_meas'], 'Port', '2');
-    add_block('built-in/Outport', [subsys '/ic_meas'], 'Port', '3');
-    add_block('built-in/Outport', [subsys '/theta_e'], 'Port', '4');
-    add_block('built-in/Outport', [subsys '/omega_m'], 'Port', '5');
+    current_noise_std = 0.0;
+    theta_noise_std = 0.0;
+    noise_seed = 100;
+    if isfield(sim_params, 'current_noise_std')
+        current_noise_std = sim_params.current_noise_std;
+    end
+    if isfield(sim_params, 'theta_noise_std')
+        theta_noise_std = sim_params.theta_noise_std;
+    end
+    if isfield(sim_params, 'noise_seed')
+        noise_seed = sim_params.noise_seed;
+    end
+    Ts = sim_params.Ts_control;
 
-    % Pass-through currents
-    add_line(subsys, 'ia/1', 'ia_meas/1');
-    add_line(subsys, 'ib/1', 'ib_meas/1');
-    add_line(subsys, 'ic/1', 'ic_meas/1');
+    add_block('built-in/Inport',  [subsys '/ia'],      'Port', '1');
+    current_noise_var_str = num2str(current_noise_std^2, '%.12g');
+    add_block('simulink/Sources/Random Number', [subsys '/Noise_ia'], ...
+        'Mean', '0', ...
+        'Variance', current_noise_var_str, ...
+        'Seed', num2str(noise_seed + 1), ...
+        'SampleTime', num2str(Ts), ...
+        'Position', [120 20 170 40]);
+    add_block('simulink/Sources/Random Number', [subsys '/Noise_ib'], ...
+        'Mean', '0', ...
+        'Variance', current_noise_var_str, ...
+        'Seed', num2str(noise_seed + 2), ...
+        'SampleTime', num2str(Ts), ...
+        'Position', [120 70 170 90]);
+    add_block('simulink/Sources/Random Number', [subsys '/Noise_ic'], ...
+        'Mean', '0', ...
+        'Variance', current_noise_var_str, ...
+        'Variance', current_noise_variance_str, ...
+        'Variance', current_noise_variance_str, ...
+        'SampleTime', num2str(Ts), ...
+        'Position', [120 20 170 40]);
+    add_block('simulink/Sources/Random Number', [subsys '/Noise_ib'], ...
+        'Mean', '0', ...
+        'Variance', num2str(current_noise_std^2, '%.12g'), ...
+        'Seed', num2str(noise_seed + 2), ...
+        'SampleTime', num2str(Ts), ...
+        'Position', [120 70 170 90]);
+    add_block('simulink/Sources/Random Number', [subsys '/Noise_ic'], ...
+        'Mean', '0', ...
+        'Variance', num2str(current_noise_std^2, '%.12g'), ...
+        'Seed', num2str(noise_seed + 3), ...
+        'SampleTime', num2str(Ts), ...
+        'Position', [120 120 170 140]);
+
+    add_block('simulink/Math Operations/Sum', [subsys '/Sum_ia'], ...
+        'Inputs', '++', 'Position', [220 15 250 45]);
+    add_block('simulink/Math Operations/Sum', [subsys '/Sum_ib'], ...
+        'Inputs', '++', 'Position', [220 65 250 95]);
+    add_block('simulink/Math Operations/Sum', [subsys '/Sum_ic'], ...
+        'Inputs', '++', 'Position', [220 115 250 145]);
+
+    add_line(subsys, 'ia/1', 'Sum_ia/1');
+    add_line(subsys, 'Noise_ia/1', 'Sum_ia/2');
+
+    theta_noise_var = theta_noise_std^2;
+    add_block('simulink/Sources/Random Number', [subsys '/Noise_theta'], ...
+        'Mean', '0', ...
+        'Variance', num2str(theta_noise_var, '%.12g'), ...
+    add_line(subsys, 'Noise_ib/1', 'Sum_ib/2');
+    add_line(subsys, 'Sum_ib/1', 'ib_meas/1');
+
+    add_line(subsys, 'ic/1', 'Sum_ic/1');
+    add_line(subsys, 'Noise_ic/1', 'Sum_ic/2');
+    add_line(subsys, 'Sum_ic/1', 'ic_meas/1');
 
     % theta_e = pole_pairs * theta_m
     add_block('simulink/Math Operations/Gain', [subsys '/PoleP'], ...
         'Gain', num2str(motor_params.p), ...
         'Position', [200 180 250 210]);
+    add_block('simulink/Sources/Random Number', [subsys '/Noise_theta'], ...
+        'Mean', '0', ...
+        'Variance', num2str(theta_noise_std^2, '%.12g'), ...
+        'Seed', num2str(noise_seed + 4), ...
+        'SampleTime', num2str(Ts), ...
+        'Position', [280 190 330 210]);
+    add_block('simulink/Math Operations/Sum', [subsys '/Sum_theta'], ...
+        'Inputs', '++', ...
+        'Position', [360 180 390 210]);
+
     add_line(subsys, 'theta_m/1', 'PoleP/1');
-    add_line(subsys, 'PoleP/1', 'theta_e/1');
+    add_line(subsys, 'PoleP/1', 'Sum_theta/1');
+    add_line(subsys, 'Noise_theta/1', 'Sum_theta/2');
+    add_line(subsys, 'Sum_theta/1', 'theta_e/1');
 
     % omega_m: direct pass-through (no Derivative block - avoids noise)
     add_line(subsys, 'omega_m_in/1', 'omega_m/1');
