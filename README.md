@@ -19,7 +19,8 @@ pmsm_simscape/
 │   │   ├── svpwm_modulator.m        # 空间矢量 PWM
 │   │   └── pmsm_dq_model.m          # PMSM dq 轴动态方程
 │   ├── s_function/                  # S-Function (C++ 控制器桥接)
-│   │   └── sfun_foc_controller.cpp  # Simulink S-Function 包装器
+│   │   ├── sfun_foc_controller.cpp  # Simulink S-Function 包装器
+│   │   └── sfun_pi_controller.cpp   # 可复用 PI 控制器 S-Function
 │   ├── scripts/                     # 工具脚本
 │   │   ├── run_pmsm_simulation.m    # 独立仿真 (无需 Simscape)
 │   │   ├── build_sfun_foc.m         # 编译 S-Function MEX
@@ -128,13 +129,36 @@ make
 
 % 方式 B：创建 Simscape 模型 (需要 Simulink + Simscape 工具箱)
 >> pmsm_foc_simscape
+
+% 方式 C：蓝库 plant 验收（需要提供闭源模型名）
+>> create_blue_plant_wrapper_template('my_blue_plant_wrapper', true, 'gates_6')
+>> run_phase1_blue_acceptance('your_simscape_plant_model', 'gates_6')
+
+% 或通过环境变量提供模型名
+% macOS/Linux: export PMSM_SIMSCAPE_PLANT_MODEL=your_simscape_plant_model
+>> run_phase1_blue_acceptance
+
+% 如果你只有 ee_lib/... 组件路径，而没有可引用模型：
+% 1) 先用 create_blue_plant_wrapper_template 生成包装模型
+% 2) 在 PlantCore 子系统中接入你的闭源蓝库组件
+% 3) 传入包装模型名（例如 my_blue_plant_wrapper）跑验收
+% 4) simscape_plant_input 可选: 'gates_6'（默认）或 'duty_abc'
+
+% 模块化诊断（建议波形异常时先跑）
+% 扫描 theta_e 映射模式并比较 id/iq RMS，定位角度映射/符号问题
+>> run_blue_theta_mode_sweep('my_blue_plant_wrapper')
+
+% PlantCore 开环模块测试（不经过 FOC）
+% 直接给 gates_6 注入开环 SPWM，检查 ia/ib/ic 是否物理合理
+>> run_plantcore_openloop_test('my_blue_plant_wrapper')
 ```
 
 ### 3. 编译 S-Function MEX
 
 ```matlab
 cd matlab/scripts
-build_sfun_foc        % 将 C++ 控制器编译为 Simulink S-Function
+build_sfun_foc        % 将 C++ FOC 控制器编译为 Simulink S-Function
+build_sfun_pid        % 将 C++ PI 控制器编译为 Simulink S-Function
 ```
 
 ### 4. Python 绑定编译

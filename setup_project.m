@@ -27,3 +27,4 @@ fprintf('  run_pmsm_simulation   - Standalone FOC simulation (no Simscape needed
 fprintf('  pmsm_foc_simscape     - Simscape model setup (requires Simulink + Simscape)\n');
 fprintf('  test_pmsm_lib         - Run MATLAB unit tests\n');
 fprintf('  build_sfun_foc        - Compile C++ S-Function MEX\n');
+fprintf('  build_sfun_pid        - Compile C++ PI S-Function MEX\n');

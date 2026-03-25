@@ -6,8 +6,8 @@ function [model_name, sim_out] = pmsm_foc_simscape(overrides)
 %   pmsm_foc_simscape(struct('run_sim', false))
 %
 % Note:
-%   This function enforces the C++ S-Function controller path and fails fast
-%   if the MEX build cannot be completed.
+%   This function enforces C++ S-Function controller paths and fails fast
+%   if required MEX builds cannot be completed.
 
 if nargin < 1
     overrides = struct();
@@ -23,9 +23,11 @@ end
 
 script_dir = fileparts(mfilename('fullpath'));
 matlab_dir = fullfile(script_dir, '..');
+model_dir = fullfile(matlab_dir, 'models');
 addpath(matlab_dir);
 addpath(fullfile(matlab_dir, 'scripts'));
 addpath(script_dir);
+addpath(model_dir);
 rehash path;
 
 motor_params = struct();
@@ -60,9 +62,17 @@ sim_params.Ts_speed = 10 * sim_params.Ts_control;
 sim_params.t_end = 0.5;
 sim_params.solver = 'ode23t';
 sim_params.max_step = 1e-5;
-sim_params.controller_mode = 'sfun';
+sim_params.controller_mode = 'pid_sfun';
+sim_params.plant_mode = 'simscape_blue';
+sim_params.simscape_plant_input = 'gates_6';
+sim_params.simscape_plant_model = strtrim(getenv('PMSM_SIMSCAPE_PLANT_MODEL'));
 sim_params.current_noise_std = 0.02;
 sim_params.theta_noise_std = 1e-3;
+sim_params.current_meas_lpf_hz = 2000.0;
+sim_params.omega_meas_lpf_hz = 500.0;
+sim_params.theta_e_mode = 'p_times_theta_m';
+sim_params.theta_e_offset = 0.0;
+sim_params.enable_debug_logging = false;
 sim_params.noise_seed = 42;
 sim_params.run_sim = true;
 
@@ -93,6 +103,64 @@ if isfield(overrides, 'run_sim')
     sim_params.run_sim = logical(overrides.run_sim);
 end
 
+if strcmpi(sim_params.plant_mode, 'simscape_blue')
+    if ~isfield(sim_params, 'simscape_plant_input') || isempty(sim_params.simscape_plant_input)
+        sim_params.simscape_plant_input = 'gates_6';
+    end
+
+    if ~strcmpi(sim_params.simscape_plant_input, 'duty_abc') && ~strcmpi(sim_params.simscape_plant_input, 'gates_6')
+        error('Unsupported simscape_plant_input: %s. Use duty_abc or gates_6.', sim_params.simscape_plant_input);
+    end
+
+    if ~isfield(sim_params, 'simscape_plant_model') || isempty(strtrim(sim_params.simscape_plant_model))
+        sim_params.simscape_plant_model = strtrim(getenv('PMSM_SIMSCAPE_PLANT_MODEL'));
+    end
+
+    if isempty(strtrim(sim_params.simscape_plant_model))
+        error(['plant_mode=simscape_blue requires a Simscape plant model name.\n' ...
+               'Provide one of:\n' ...
+               '  1) overrides.sim_params.simscape_plant_model\n' ...
+               '  2) environment variable PMSM_SIMSCAPE_PLANT_MODEL\n' ...
+               'Expected model I/O: [plant_cmd, Te_load] -> [ia, ib, ic, omega_m, Te, theta_m].']);
+    end
+
+    plant_model = strtrim(sim_params.simscape_plant_model);
+    if contains(plant_model, '/')
+        error(['sim_params.simscape_plant_model must be a model name, not a library block path.\n' ...
+               'Received: %s\n' ...
+               'Example of invalid value: ee_lib/Electromechanical/Permanent Magnet/PMSM\n' ...
+               'Create a wrapper model (with signal I/O [duty_abc, Te_load] -> [ia, ib, ic, omega_m, Te, theta_m])\n' ...
+               'and pass that wrapper model name here.'], plant_model);
+    end
+
+    model_found = bdIsLoaded(plant_model) || ...
+        ~isempty(which(plant_model)) || ...
+        ~isempty(which([plant_model '.slx'])) || ...
+        ~isempty(which([plant_model '.slxp'])) || ...
+        exist([plant_model '.slx'], 'file') == 2 || ...
+        exist([plant_model '.slxp'], 'file') == 2;
+
+    if ~model_found
+        error(['Simscape plant model "%s" was not found on MATLAB path.\n' ...
+               'Add the model folder to path or pass a valid model name.'], plant_model);
+    end
+
+    if ~bdIsLoaded(plant_model)
+        try
+            load_system(plant_model);
+        catch ME
+            error('Failed to load Simscape plant model "%s": %s', plant_model, ME.message);
+        end
+    end
+
+    % Best-effort: follow Simulink recommendation to reduce artificial
+    % algebraic loops in referenced models when this parameter is supported.
+    try
+        set_param(plant_model, 'MinAlgLoopOccurrences', 'on');
+    catch
+    end
+end
+
 assignin('base', 'motor_params', motor_params);
 assignin('base', 'inv_params', inv_params);
 assignin('base', 'ctrl_params', ctrl_params);
@@ -100,15 +168,30 @@ assignin('base', 'sim_params', sim_params);
 assignin('base', 'ref_params', ref_params);
 
 cpp_sfun_path = fullfile(fileparts(mfilename('fullpath')), '..', 's_function');
-if ~exist(fullfile(cpp_sfun_path, 'sfun_foc_controller.cpp'), 'file')
-    error('S-Function source is missing at %s', cpp_sfun_path);
-end
+if strcmpi(sim_params.controller_mode, 'sfun')
+    if ~exist(fullfile(cpp_sfun_path, 'sfun_foc_controller.cpp'), 'file')
+        error('FOC S-Function source is missing at %s', cpp_sfun_path);
+    end
 
-fprintf('Building C++ S-Function MEX...\n');
-build_sfun_foc(cpp_sfun_path);
+    fprintf('Building C++ FOC S-Function MEX...\n');
+    build_sfun_foc(cpp_sfun_path);
 
-if exist('sfun_foc_controller', 'file') ~= 3
-    error('sfun_foc_controller MEX is not available on MATLAB path after build.');
+    if exist('sfun_foc_controller', 'file') ~= 3
+        error('sfun_foc_controller MEX is not available on MATLAB path after build.');
+    end
+elseif strcmpi(sim_params.controller_mode, 'pid_sfun')
+    if ~exist(fullfile(cpp_sfun_path, 'sfun_pi_controller.cpp'), 'file')
+        error('PI S-Function source is missing at %s', cpp_sfun_path);
+    end
+
+    fprintf('Building C++ PI S-Function MEX...\n');
+    build_sfun_pid(cpp_sfun_path);
+
+    if exist('sfun_pi_controller', 'file') ~= 3
+        error('sfun_pi_controller MEX is not available on MATLAB path after build.');
+    end
+else
+    error('Unsupported controller_mode: %s', sim_params.controller_mode);
 end
 
 model_name = 'pmsm_foc_model';

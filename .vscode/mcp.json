@@ -1,0 +1,13 @@
+{
+    "servers": {
+        "matlab": {
+            "type": "stdio",
+            "command": "/Users/wangguandi/Downloads/matlab-mcp-core-server",
+            "args": [                
+                "--matlab-root=/Volumes/game/Applications/MATLAB_R2025b.app",
+                "--initialize-matlab-on-startup=true",
+                "--initial-working-folder=/Users/wangguandi/Documents/pmsm_simscape",
+                "--matlab-display-mode=nodesktop"]
+        }
+    }
+}
