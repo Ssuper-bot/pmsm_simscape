@@ -32,3 +32,5 @@ Thumbs.db
 
 # Bridge temp files
 /tmp/pmsm_bridge/
+
+attachment/

@@ -1,4 +1,4 @@
-function results = run_blue_theta_offset_sweep(simscape_plant_model, theta_e_mode)
+function results = run_blue_theta_offset_sweep(simscape_plant_model, theta_e_mode, gates_order)
 %RUN_BLUE_THETA_OFFSET_SWEEP Sweep theta offset and compare id/iq behavior.
 %
 % Usage:
@@ -13,6 +13,9 @@ if isempty(simscape_plant_model)
 end
 if nargin < 2 || isempty(theta_e_mode)
     theta_e_mode = 'p_times_theta_m';
+end
+if nargin < 3 || isempty(gates_order)
+    gates_order = [1 2 3 4 5 6];
 end
 
 offsets = [-pi, -2*pi/3, -pi/2, -pi/3, -pi/6, 0, pi/6, pi/3, pi/2, 2*pi/3, pi];
@@ -42,6 +45,7 @@ for i = 1:numel(offsets)
             'plant_mode', 'simscape_blue', ...
             'simscape_plant_input', 'gates_6', ...
             'simscape_plant_model', simscape_plant_model, ...
+            'gates_order', gates_order, ...
             'theta_e_mode', theta_e_mode, ...
             'theta_e_offset', off, ...
             'enable_debug_logging', true, ...

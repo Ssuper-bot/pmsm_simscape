@@ -234,6 +234,16 @@ function create_gate_driver_subsystem(subsys, inv_params, sim_params)
 %   Input 1: duty_abc [3x1]
 %   Output 1: gates_6 [6x1] = [Sa+ Sa- Sb+ Sb- Sc+ Sc-]
 
+    gate_order = 1:6;
+    if isfield(sim_params, 'gates_order') && ~isempty(sim_params.gates_order)
+        candidate = sim_params.gates_order;
+        if isnumeric(candidate) && numel(candidate) == 6 && all(sort(candidate(:)') == 1:6)
+            gate_order = double(candidate(:)');
+        else
+            error('sim_params.gates_order must be a permutation of [1 2 3 4 5 6].');
+        end
+    end
+
     add_block('built-in/Inport', [subsys '/duty_abc'], 'Port', '1', 'PortDimensions', '3');
     add_block('built-in/Outport', [subsys '/gates_6'], 'Port', '1', 'PortDimensions', '6');
 
@@ -286,12 +296,10 @@ function create_gate_driver_subsystem(subsys, inv_params, sim_params)
     add_line(subsys, 'CmpB/1', 'NotB/1');
     add_line(subsys, 'CmpC/1', 'NotC/1');
 
-    add_line(subsys, 'CmpA/1', 'Mux_gates/1');
-    add_line(subsys, 'NotA/1', 'Mux_gates/2');
-    add_line(subsys, 'CmpB/1', 'Mux_gates/3');
-    add_line(subsys, 'NotB/1', 'Mux_gates/4');
-    add_line(subsys, 'CmpC/1', 'Mux_gates/5');
-    add_line(subsys, 'NotC/1', 'Mux_gates/6');
+    gate_src = {'CmpA/1', 'NotA/1', 'CmpB/1', 'NotB/1', 'CmpC/1', 'NotC/1'};
+    for i = 1:6
+        add_line(subsys, gate_src{gate_order(i)}, sprintf('Mux_gates/%d', i));
+    end
     add_line(subsys, 'Mux_gates/1', 'GatesToDouble/1');
     add_line(subsys, 'GatesToDouble/1', 'gates_6/1');
 end

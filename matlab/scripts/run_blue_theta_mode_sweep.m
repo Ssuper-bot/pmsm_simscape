@@ -1,4 +1,4 @@
-function results = run_blue_theta_mode_sweep(simscape_plant_model)
+function results = run_blue_theta_mode_sweep(simscape_plant_model, gates_order)
 %RUN_BLUE_THETA_MODE_SWEEP Sweep theta_e mapping modes and compare id/iq behavior.
 %
 % Usage:
@@ -12,6 +12,9 @@ if nargin < 1 || isempty(simscape_plant_model)
 end
 if isempty(simscape_plant_model)
     error('Missing simscape_plant_model.');
+end
+if nargin < 2 || isempty(gates_order)
+    gates_order = [1 2 3 4 5 6];
 end
 
 modes = {
@@ -45,6 +48,7 @@ for i = 1:numel(modes)
             'plant_mode', 'simscape_blue', ...
             'simscape_plant_input', 'gates_6', ...
             'simscape_plant_model', simscape_plant_model, ...
+            'gates_order', gates_order, ...
             'theta_e_mode', mode, ...
             'enable_debug_logging', true, ...
             'current_noise_std', 0.0, ...
