@@ -77,6 +77,21 @@ FOCOutput foc_controller_step(
 );
 
 /**
+ * @brief FOC step with optional external iq reference bypassing speed PI.
+ *
+ * @param iq_ref_external External q-axis current reference [A]
+ * @param use_external_iq_ref When true, bypass speed PI and use iq_ref_external
+ */
+FOCOutput foc_controller_step_with_iq_ref(
+    double ia, double ib, double ic,
+    double theta_e, double omega_m,
+    double speed_ref, double id_ref,
+    double iq_ref_external, bool use_external_iq_ref,
+    double& integral_id, double& integral_iq, double& integral_speed,
+    const FOCConfig& config
+);
+
+/**
  * @brief Stateful FOC controller class.
  *
  * Maintains internal PI controller states. Suitable for standalone

@@ -5,7 +5,7 @@
  * This S-Function can be used in Simulink/Simscape models to provide
  * Field-Oriented Control of a PMSM motor.
  *
- * Inputs (port 0, width 7):
+ * Inputs (port 0, width 8):
  *   [0] ia        - Phase A current [A]
  *   [1] ib        - Phase B current [A]
  *   [2] ic        - Phase C current [A]
@@ -13,6 +13,7 @@
  *   [4] omega_m   - Mechanical speed [rad/s]
  *   [5] speed_ref - Speed reference [rad/s]
  *   [6] id_ref    - d-axis current reference [A]
+ *   [7] iq_ref_ext - External q-axis current reference [A]
  *
  * Outputs (port 0, width 5):
  *   [0] da        - Phase A duty cycle [0,1]
@@ -37,6 +38,7 @@
  *  [12] pole_pairs - Number of pole pairs
  *  [13] iq_max     - Max q-axis current [A]
  *  [14] id_max     - Max d-axis current [A]
+ *  [15] use_external_iq_ref - 1: use iq_ref_ext, 0: use speed PI
  */
 
 #define S_FUNCTION_NAME  sfun_foc_controller
@@ -45,8 +47,8 @@
 #include "simstruc.h"
 #include "foc_controller.h"
 
-#define NUM_PARAMS    15
-#define NUM_INPUTS    7
+#define NUM_PARAMS    16
+#define NUM_INPUTS    8
 #define NUM_OUTPUTS   5
 #define NUM_DWORK     3   // integral_id, integral_iq, integral_speed
 
@@ -66,6 +68,7 @@
 #define PARAM_POLES     12
 #define PARAM_IQ_MAX    13
 #define PARAM_ID_MAX    14
+#define PARAM_USE_EXT_IQ 15
 
 static double getParam(SimStruct *S, int idx) {
     return mxGetScalar(ssGetSFcnParam(S, idx));
@@ -142,6 +145,7 @@ static void mdlOutputs(SimStruct *S, int_T tid)
     double omega_m   = u[4];
     double speed_ref = u[5];
     double id_ref    = u[6];
+    double iq_ref_ext = u[7];
 
     /* Get parameters */
     double Ts       = getParam(S, PARAM_TS);
@@ -165,9 +169,12 @@ static void mdlOutputs(SimStruct *S, int_T tid)
     config.Vdc       = Vdc;
     config.Ts        = Ts;
 
+    bool use_external_iq_ref = getParam(S, PARAM_USE_EXT_IQ) > 0.5;
+
     /* Run FOC controller step */
-    pmsm::FOCOutput output = pmsm::foc_controller_step(
+    pmsm::FOCOutput output = pmsm::foc_controller_step_with_iq_ref(
         ia, ib, ic, theta_e, omega_m, speed_ref, id_ref,
+        iq_ref_ext, use_external_iq_ref,
         *integral_id, *integral_iq, *integral_speed,
         config
     );

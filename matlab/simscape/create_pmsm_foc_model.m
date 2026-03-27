@@ -6,8 +6,7 @@ function create_pmsm_foc_model(model_name, motor_params, inv_params, ctrl_params
 %   - Plant path B: Simscape blue-library plant via model reference
 %   - FOC controller (Clarke/Park/PI/InvPark/SVPWM, inline equations)
 %   - Measurement subsystem (pass-through + theta_m->theta_e)
-%   - Mechanical load (step torque)
-%   - Reference generator (speed ramp + id_ref=0)
+%   - Signals input subsystem (reference generator + mechanical load)
 %   - Scopes
 
     %% Create new model
@@ -19,6 +18,7 @@ function create_pmsm_foc_model(model_name, motor_params, inv_params, ctrl_params
 
     % Set solver
     set_param(model_name, ...
+        'SolverType', 'Variable-step', ...
         'Solver', sim_params.solver, ...
         'StopTime', num2str(sim_params.t_end), ...
         'MaxStep', num2str(sim_params.max_step), ...
@@ -38,11 +38,11 @@ function create_pmsm_foc_model(model_name, motor_params, inv_params, ctrl_params
         plant_input_mode = sim_params.simscape_plant_input;
     end
 
-    % --- Reference Generator ---
-    ref_gen = [model_name '/Reference Generator'];
-    add_block('built-in/Subsystem', ref_gen);
-    create_reference_generator(ref_gen, ref_params);
-    set_param(ref_gen, 'Position', [50 30 180 110]);
+    % --- Signals input module (reference + load) ---
+    signals_block = [model_name '/signals'];
+    add_block('built-in/Subsystem', signals_block);
+    create_signals_subsystem(signals_block, ref_params, motor_params, ctrl_params, sim_params);
+    set_param(signals_block, 'Position', [40 30 260 260]);
 
     % --- FOC Controller Subsystem ---
     foc_ctrl = [model_name '/FOC Controller'];
@@ -76,12 +76,6 @@ function create_pmsm_foc_model(model_name, motor_params, inv_params, ctrl_params
         set_param(pmsm_block, 'Position', [600 180 780 400]);
     end
 
-    % --- Mechanical Load ---
-    load_block = [model_name '/Mechanical Load'];
-    add_block('built-in/Subsystem', load_block);
-    create_mechanical_load(load_block, ref_params);
-    set_param(load_block, 'Position', [880 220 1020 340]);
-
     % --- Measurements ---
     meas_block = [model_name '/Measurements'];
     add_block('built-in/Subsystem', meas_block);
@@ -93,9 +87,10 @@ function create_pmsm_foc_model(model_name, motor_params, inv_params, ctrl_params
 
     %% ===== Connect Top-Level Blocks =====
 
-    % Reference Generator -> FOC Controller
-    add_line(model_name, 'Reference Generator/1', 'FOC Controller/6', 'autorouting', 'smart');
-    add_line(model_name, 'Reference Generator/2', 'FOC Controller/7', 'autorouting', 'smart');
+    % signals -> FOC Controller
+    add_line(model_name, 'signals/1', 'FOC Controller/6', 'autorouting', 'smart');
+    add_line(model_name, 'signals/2', 'FOC Controller/7', 'autorouting', 'smart');
+    add_line(model_name, 'signals/3', 'FOC Controller/8', 'autorouting', 'smart');
 
     if strcmpi(plant_mode, 'simscape_blue')
         if strcmpi(plant_input_mode, 'gates_6')
@@ -107,8 +102,8 @@ function create_pmsm_foc_model(model_name, motor_params, inv_params, ctrl_params
             add_line(model_name, 'FOC Controller/1', 'Simscape Plant/1', 'autorouting', 'smart');
         end
 
-        % Mechanical load -> Plant torque input
-        add_line(model_name, 'Mechanical Load/1', 'Simscape Plant/2', 'autorouting', 'smart');
+        % signals torque command -> Plant torque input
+        add_line(model_name, 'signals/4', 'Simscape Plant/2', 'autorouting', 'smart');
 
         % Plant -> Measurements (ia, ib, ic, theta_m, omega_m)
         add_line(model_name, 'Simscape Plant/1', 'Measurements/1', 'autorouting', 'smart');
@@ -125,8 +120,8 @@ function create_pmsm_foc_model(model_name, motor_params, inv_params, ctrl_params
         add_line(model_name, 'Power Stage/2', 'PMSM Motor/2', 'autorouting', 'smart');
         add_line(model_name, 'Power Stage/3', 'PMSM Motor/3', 'autorouting', 'smart');
 
-        % Mechanical Load -> PMSM Motor  (Te_load)
-        add_line(model_name, 'Mechanical Load/1', 'PMSM Motor/4', 'autorouting', 'smart');
+        % signals torque command -> PMSM Motor  (Te_load)
+        add_line(model_name, 'signals/4', 'PMSM Motor/4', 'autorouting', 'smart');
 
         % PMSM Motor -> Measurements  (ia, ib, ic, theta_m, omega_m)
         add_line(model_name, 'PMSM Motor/1', 'Measurements/1', 'autorouting', 'smart');
@@ -143,15 +138,8 @@ function create_pmsm_foc_model(model_name, motor_params, inv_params, ctrl_params
     add_line(model_name, 'Measurements/4', 'FOC Controller/4', 'autorouting', 'smart');
     add_line(model_name, 'Measurements/5', 'FOC Controller/5', 'autorouting', 'smart');
 
-    % Scopes
-    if strcmpi(plant_mode, 'simscape_blue')
-        add_line(model_name, 'Simscape Plant/4', 'Speed Scope/1', 'autorouting', 'smart');
-        add_line(model_name, 'Simscape Plant/5', 'Torque Scope/1', 'autorouting', 'smart');
-    else
-        add_line(model_name, 'PMSM Motor/4', 'Speed Scope/1', 'autorouting', 'smart');
-        add_line(model_name, 'PMSM Motor/5', 'Torque Scope/1', 'autorouting', 'smart');
-    end
-    add_line(model_name, 'FOC Controller/2', 'Current Scope/1', 'autorouting', 'smart');
+    % Scopes compare input refs (From tags from signals) vs measured outputs.
+    wire_scope_compare_paths(model_name, plant_mode);
 
     if isfield(sim_params, 'enable_debug_logging') && logical(sim_params.enable_debug_logging)
         create_debug_logging(model_name, plant_mode, plant_input_mode);
@@ -342,7 +330,7 @@ end
 
 function create_foc_controller_subsystem(subsys, ctrl_params, inv_params, motor_params, sim_params)
 %CREATE_FOC_CONTROLLER_SUBSYSTEM Fully-wired FOC controller
-%   Inputs:  1:ia  2:ib  3:ic  4:theta_e  5:omega_m  6:speed_ref  7:id_ref
+%   Inputs:  1:ia  2:ib  3:ic  4:theta_e  5:omega_m  6:speed_ref  7:id_ref  8:iq_ref_cmd
 %   Outputs: 1:duty_abc[3x1]  2:id_meas  3:iq_meas
 
     controller_mode = 'pid_sfun';
@@ -366,6 +354,7 @@ function create_foc_controller_subsystem(subsys, ctrl_params, inv_params, motor_
     add_block('built-in/Inport', [subsys '/omega_m'],   'Port', '5');
     add_block('built-in/Inport', [subsys '/speed_ref'], 'Port', '6');
     add_block('built-in/Inport', [subsys '/id_ref'],    'Port', '7');
+    add_block('built-in/Inport', [subsys '/iq_ref_cmd'],'Port', '8');
 
     % === Output Ports ===
     add_block('built-in/Outport', [subsys '/duty_abc'], 'Port', '1');
@@ -491,7 +480,7 @@ end
 
 function create_foc_controller_sfunction(subsys, ctrl_params, inv_params, motor_params, sim_params)
 %CREATE_FOC_CONTROLLER_SFUNCTION C++ S-Function based FOC controller wrapper
-%   Inputs:  1:ia  2:ib  3:ic  4:theta_e  5:omega_m  6:speed_ref  7:id_ref
+%   Inputs:  1:ia  2:ib  3:ic  4:theta_e  5:omega_m  6:speed_ref  7:id_ref  8:iq_ref_cmd
 %   Outputs: 1:duty_abc[3x1]  2:id_meas  3:iq_meas
 
     add_block('built-in/Inport', [subsys '/ia'],        'Port', '1');
@@ -501,19 +490,24 @@ function create_foc_controller_sfunction(subsys, ctrl_params, inv_params, motor_
     add_block('built-in/Inport', [subsys '/omega_m'],   'Port', '5');
     add_block('built-in/Inport', [subsys '/speed_ref'], 'Port', '6');
     add_block('built-in/Inport', [subsys '/id_ref'],    'Port', '7');
+    add_block('built-in/Inport', [subsys '/iq_ref_cmd'],'Port', '8');
 
     add_block('built-in/Outport', [subsys '/duty_abc'], 'Port', '1');
     add_block('built-in/Outport', [subsys '/id_meas'],  'Port', '2');
     add_block('built-in/Outport', [subsys '/iq_meas'],  'Port', '3');
 
     add_block('simulink/Signal Routing/Mux', [subsys '/Mux_in'], ...
-        'Inputs', '7', 'Position', [120 90 130 240]);
+        'Inputs', '8', 'Position', [120 90 130 270]);
 
     Ts = sim_params.Ts_control;
+    use_external_iq_ref = 0;
+    if isfield(sim_params, 'iq_ref_source') && strcmpi(sim_params.iq_ref_source, 'throttle')
+        use_external_iq_ref = 1;
+    end
 
     % Parameters for sfun_foc_controller, in order:
     % [Ts, Vdc, Kp_id, Ki_id, Kp_iq, Ki_iq, Kp_speed, Ki_speed, ...
-    %  Rs, Ld, Lq, flux_pm, p, iq_max, id_max]
+    %  Rs, Ld, Lq, flux_pm, p, iq_max, id_max, use_external_iq_ref]
     param_values = [ ...
         Ts, ...
         inv_params.Vdc, ...
@@ -521,7 +515,8 @@ function create_foc_controller_sfunction(subsys, ctrl_params, inv_params, motor_
         ctrl_params.Kp_iq, ctrl_params.Ki_iq, ...
         ctrl_params.Kp_speed, ctrl_params.Ki_speed, ...
         motor_params.Rs, motor_params.Ld, motor_params.Lq, motor_params.flux_pm, ...
-        motor_params.p, ctrl_params.iq_max, ctrl_params.id_max ...
+        motor_params.p, ctrl_params.iq_max, ctrl_params.id_max, ...
+        use_external_iq_ref ...
     ];
 
     % Generate a robust format string matching the number of parameters
@@ -546,6 +541,7 @@ function create_foc_controller_sfunction(subsys, ctrl_params, inv_params, motor_
     add_line(subsys, 'omega_m/1', 'Mux_in/5');
     add_line(subsys, 'speed_ref/1', 'Mux_in/6');
     add_line(subsys, 'id_ref/1', 'Mux_in/7');
+    add_line(subsys, 'iq_ref_cmd/1', 'Mux_in/8');
 
     add_line(subsys, 'Mux_in/1', 'FOC_SFun/1');
     add_line(subsys, 'FOC_SFun/1', 'Demux_out/1');
@@ -560,7 +556,7 @@ end
 
 function create_foc_controller_pid_sfunction(subsys, ctrl_params, inv_params, sim_params)
 %CREATE_FOC_CONTROLLER_PID_SFUNCTION FOC with C++ PI S-Function loops.
-%   Inputs:  1:ia  2:ib  3:ic  4:theta_e  5:omega_m  6:speed_ref  7:id_ref
+%   Inputs:  1:ia  2:ib  3:ic  4:theta_e  5:omega_m  6:speed_ref  7:id_ref  8:iq_ref_cmd
 %   Outputs: 1:duty_abc[3x1]  2:id_meas  3:iq_meas
 
     add_block('built-in/Inport', [subsys '/ia'],        'Port', '1');
@@ -570,6 +566,7 @@ function create_foc_controller_pid_sfunction(subsys, ctrl_params, inv_params, si
     add_block('built-in/Inport', [subsys '/omega_m'],   'Port', '5');
     add_block('built-in/Inport', [subsys '/speed_ref'], 'Port', '6');
     add_block('built-in/Inport', [subsys '/id_ref'],    'Port', '7');
+    add_block('built-in/Inport', [subsys '/iq_ref_cmd'],'Port', '8');
 
     add_block('built-in/Outport', [subsys '/duty_abc'], 'Port', '1');
     add_block('built-in/Outport', [subsys '/id_meas'],  'Port', '2');
@@ -659,10 +656,25 @@ function create_foc_controller_pid_sfunction(subsys, ctrl_params, inv_params, si
         'Parameters', speed_params, ...
         'Position', [230 200 360 240]);
 
+    iq_ref_source = 'speed_pi';
+    if isfield(sim_params, 'iq_ref_source') && ~isempty(sim_params.iq_ref_source)
+        iq_ref_source = lower(sim_params.iq_ref_source);
+    end
+    add_block('simulink/Signal Routing/Switch', [subsys '/IqRef Select'], ...
+        'Threshold', '0.5', ...
+        'Criteria', 'u2 >= Threshold', ...
+        'Position', [420 215 455 255]);
+    add_block('built-in/Constant', [subsys '/UseExternalIqRef'], ...
+        'Value', num2str(double(strcmp(iq_ref_source, 'throttle'))), ...
+        'Position', [360 255 405 275]);
+
     add_line(subsys, 'speed_ref/1', 'RPM2RadS/1');
     add_line(subsys, 'RPM2RadS/1', 'Speed Error/1');
     add_line(subsys, 'omega_m/1', 'Speed Error/2');
     add_line(subsys, 'Speed Error/1', 'Speed PI SFun/1');
+    add_line(subsys, 'Speed PI SFun/1', 'IqRef Select/1');
+    add_line(subsys, 'UseExternalIqRef/1', 'IqRef Select/2');
+    add_line(subsys, 'iq_ref_cmd/1', 'IqRef Select/3');
 
     % Current PI via C++ S-Function
     add_block('simulink/Math Operations/Sum', [subsys '/Id Error'], ...
@@ -691,7 +703,7 @@ function create_foc_controller_pid_sfunction(subsys, ctrl_params, inv_params, si
     add_line(subsys, 'Id_calc/1', 'Id Error/2');
     add_line(subsys, 'Id Error/1', 'Id PI SFun/1');
 
-    add_line(subsys, 'Speed PI SFun/1', 'Iq Error/1');
+    add_line(subsys, 'IqRef Select/1', 'Iq Error/1');
     add_line(subsys, 'Iq_calc/1', 'Iq Error/2');
     add_line(subsys, 'Iq Error/1', 'Iq PI SFun/1');
 
@@ -1018,42 +1030,139 @@ function create_first_order_discrete_lpf(subsys, name, alpha, position)
         'Position', position);
 end
 
-function create_mechanical_load(subsys, ref_params)
-%CREATE_MECHANICAL_LOAD Step torque load
-%   Output 1: Te_load
+function create_signals_subsystem(subsys, ref_params, motor_params, ctrl_params, sim_params)
+%CREATE_SIGNALS_SUBSYSTEM Unified system input module (reference + load).
+% Outputs:
+%   1:speed_ref_rpm 2:id_ref 3:iq_ref_cmd 4:Te_load
 
-    add_block('built-in/Outport', [subsys '/Te_load'], 'Port', '1');
+    add_block('built-in/Outport', [subsys '/speed_ref'], 'Port', '1');
+    add_block('built-in/Outport', [subsys '/id_ref'], 'Port', '2');
+    add_block('built-in/Outport', [subsys '/iq_ref_cmd'], 'Port', '3');
+    add_block('built-in/Outport', [subsys '/Te_load'], 'Port', '4');
+
+    if ref_params.speed_ramp_time <= 0
+        speed_slope = 0;
+    else
+        speed_slope = ref_params.speed_ref / ref_params.speed_ramp_time;
+    end
+
+    add_block('simulink/Sources/Ramp', [subsys '/Speed Ramp'], ...
+        'Slope', num2str(speed_slope), ...
+        'Position', [45 25 115 55]);
+    add_block('simulink/Discontinuities/Saturation', [subsys '/Speed Sat'], ...
+        'UpperLimit', num2str(ref_params.speed_ref), ...
+        'LowerLimit', '0', ...
+        'Position', [145 25 205 55]);
+    add_block('built-in/Constant', [subsys '/Id Ref'], ...
+        'Value', num2str(ref_params.id_ref), ...
+        'Position', [60 80 110 100]);
+
+    add_line(subsys, 'Speed Ramp/1', 'Speed Sat/1');
+    add_line(subsys, 'Speed Sat/1', 'speed_ref/1');
+    add_line(subsys, 'Id Ref/1', 'id_ref/1');
+
+    throttle_adc_before = 0;
+    if isfield(ref_params, 'throttle_adc_before')
+        throttle_adc_before = ref_params.throttle_adc_before;
+    end
+    throttle_adc_after = 2048;
+    if isfield(ref_params, 'throttle_adc_after')
+        throttle_adc_after = ref_params.throttle_adc_after;
+    end
+    throttle_step_time = 0.05;
+    if isfield(ref_params, 'throttle_step_time')
+        throttle_step_time = ref_params.throttle_step_time;
+    end
+    throttle_torque_max = 0.2;
+    if isfield(ref_params, 'throttle_torque_max')
+        throttle_torque_max = ref_params.throttle_torque_max;
+    end
+    throttle_ts = 1e-3;
+    if isfield(sim_params, 'Ts_throttle')
+        throttle_ts = sim_params.Ts_throttle;
+    end
+
+    torque_to_iq = 1 / (1.5 * motor_params.p * motor_params.flux_pm);
+
+    add_block('simulink/Sources/Step', [subsys '/Throttle ADC Step'], ...
+        'Time', num2str(throttle_step_time), ...
+        'Before', num2str(throttle_adc_before), ...
+        'After', num2str(throttle_adc_after), ...
+        'Position', [45 130 125 160]);
+    add_block('simulink/Discontinuities/Saturation', [subsys '/ADC Sat'], ...
+        'LowerLimit', '0', ...
+        'UpperLimit', '4095', ...
+        'Position', [150 130 210 160]);
+    add_block('simulink/Discrete/Zero-Order Hold', [subsys '/Throttle ZOH'], ...
+        'SampleTime', num2str(throttle_ts), ...
+        'Position', [235 130 295 160]);
+    add_block('simulink/Math Operations/Gain', [subsys '/ADC To Norm'], ...
+        'Gain', '1/4095', ...
+        'Position', [320 130 380 160]);
+    add_block('simulink/Math Operations/Gain', [subsys '/Norm To Torque'], ...
+        'Gain', num2str(throttle_torque_max), ...
+        'Position', [405 130 485 160]);
+    add_block('simulink/Math Operations/Gain', [subsys '/Torque To Iq'], ...
+        'Gain', num2str(torque_to_iq, '%.12g'), ...
+        'Position', [510 130 590 160]);
+    add_block('simulink/Discontinuities/Saturation', [subsys '/Iq Ref Sat'], ...
+        'UpperLimit', num2str(ctrl_params.iq_max), ...
+        'LowerLimit', num2str(-ctrl_params.iq_max), ...
+        'Position', [615 130 685 160]);
+
+    add_line(subsys, 'Throttle ADC Step/1', 'ADC Sat/1');
+    add_line(subsys, 'ADC Sat/1', 'Throttle ZOH/1');
+    add_line(subsys, 'Throttle ZOH/1', 'ADC To Norm/1');
+    add_line(subsys, 'ADC To Norm/1', 'Norm To Torque/1');
+    add_line(subsys, 'Norm To Torque/1', 'Torque To Iq/1');
+    add_line(subsys, 'Torque To Iq/1', 'Iq Ref Sat/1');
+    add_line(subsys, 'Iq Ref Sat/1', 'iq_ref_cmd/1');
 
     add_block('simulink/Sources/Step', [subsys '/Load Step'], ...
         'Time', num2str(ref_params.load_step_time), ...
         'Before', '0', ...
         'After', num2str(ref_params.load_torque), ...
-        'Position', [80 60 130 90]);
-
+        'Position', [45 185 125 215]);
     add_line(subsys, 'Load Step/1', 'Te_load/1');
+
 end
 
-function create_reference_generator(subsys, ref_params)
-%CREATE_REFERENCE_GENERATOR Speed ramp + id_ref=0
-%   Output 1: speed_ref (RPM, ramped)  Output 2: id_ref
+function wire_scope_compare_paths(model_name, plant_mode)
+%WIRE_SCOPE_COMPARE_PATHS Build direct branch compare paths before each scope.
 
-    add_block('built-in/Outport', [subsys '/speed_ref'], 'Port', '1');
-    add_block('built-in/Outport', [subsys '/id_ref'],    'Port', '2');
+    add_block('simulink/Math Operations/Gain', [model_name '/SpeedRefRadS'], ...
+        'Gain', '2*pi/60', 'Position', [930 60 995 80]);
+    add_block('simulink/Signal Routing/Mux', [model_name '/Mux_speed_scope'], ...
+        'Inputs', '2', 'Position', [1065 55 1070 105]);
 
-    add_block('simulink/Sources/Ramp', [subsys '/Speed Ramp'], ...
-        'Slope', num2str(ref_params.speed_ref / ref_params.speed_ramp_time), ...
-        'Position', [50 30 120 60]);
-    add_block('simulink/Discontinuities/Saturation', [subsys '/Speed Sat'], ...
-        'UpperLimit', num2str(ref_params.speed_ref), ...
-        'LowerLimit', '0', ...
-        'Position', [160 30 220 60]);
-    add_block('built-in/Constant', [subsys '/Id Ref'], ...
-        'Value', num2str(ref_params.id_ref), ...
-        'Position', [100 90 150 110]);
+    add_line(model_name, 'signals/1', 'SpeedRefRadS/1', 'autorouting', 'smart');
+    add_line(model_name, 'SpeedRefRadS/1', 'Mux_speed_scope/2', 'autorouting', 'smart');
+    if strcmpi(plant_mode, 'simscape_blue')
+        add_line(model_name, 'Simscape Plant/4', 'Mux_speed_scope/1', 'autorouting', 'smart');
+    else
+        add_line(model_name, 'PMSM Motor/4', 'Mux_speed_scope/1', 'autorouting', 'smart');
+    end
+    add_line(model_name, 'Mux_speed_scope/1', 'Speed Scope/1', 'autorouting', 'smart');
 
-    add_line(subsys, 'Speed Ramp/1', 'Speed Sat/1');
-    add_line(subsys, 'Speed Sat/1', 'speed_ref/1');
-    add_line(subsys, 'Id Ref/1', 'id_ref/1');
+    add_block('simulink/Signal Routing/Mux', [model_name '/Mux_current_scope'], ...
+        'Inputs', '4', 'Position', [1035 165 1040 285]);
+
+    add_line(model_name, 'signals/2', 'Mux_current_scope/1', 'autorouting', 'smart');
+    add_line(model_name, 'FOC Controller/2', 'Mux_current_scope/2', 'autorouting', 'smart');
+    add_line(model_name, 'signals/3', 'Mux_current_scope/3', 'autorouting', 'smart');
+    add_line(model_name, 'FOC Controller/3', 'Mux_current_scope/4', 'autorouting', 'smart');
+    add_line(model_name, 'Mux_current_scope/1', 'Current Scope/1', 'autorouting', 'smart');
+
+    add_block('simulink/Signal Routing/Mux', [model_name '/Mux_torque_scope'], ...
+        'Inputs', '2', 'Position', [1065 315 1070 365]);
+
+    add_line(model_name, 'signals/4', 'Mux_torque_scope/1', 'autorouting', 'smart');
+    if strcmpi(plant_mode, 'simscape_blue')
+        add_line(model_name, 'Simscape Plant/5', 'Mux_torque_scope/2', 'autorouting', 'smart');
+    else
+        add_line(model_name, 'PMSM Motor/5', 'Mux_torque_scope/2', 'autorouting', 'smart');
+    end
+    add_line(model_name, 'Mux_torque_scope/1', 'Torque Scope/1', 'autorouting', 'smart');
 end
 
 function create_scopes(model_name)

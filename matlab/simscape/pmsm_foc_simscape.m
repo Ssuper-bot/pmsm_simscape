@@ -41,7 +41,7 @@ motor_params.B = 1e-4;
 
 inv_params = struct();
 inv_params.Vdc = 48;
-inv_params.fsw = 20e3;
+inv_params.fsw = 12e3;
 inv_params.Tsw = 1 / inv_params.fsw;
 inv_params.dead_time = 1e-6;
 
@@ -58,11 +58,13 @@ ctrl_params.speed_max = 3000;
 
 sim_params = struct();
 sim_params.Ts_control = 1 / inv_params.fsw;
-sim_params.Ts_speed = 10 * sim_params.Ts_control;
+sim_params.Ts_speed = 1e-3;
+sim_params.Ts_throttle = 1e-3;
 sim_params.t_end = 0.5;
 sim_params.solver = 'ode23t';
 sim_params.max_step = 1e-5;
-sim_params.controller_mode = 'pid_sfun';
+sim_params.controller_mode = 'sfun';
+sim_params.iq_ref_source = 'throttle';
 sim_params.plant_mode = 'simscape_blue';
 sim_params.simscape_plant_input = 'gates_6';
 sim_params.simscape_plant_model = strtrim(getenv('PMSM_SIMSCAPE_PLANT_MODEL'));
@@ -82,6 +84,10 @@ ref_params.speed_ramp_time = 0.1;
 ref_params.load_torque = 0.1;
 ref_params.load_step_time = 0.3;
 ref_params.id_ref = 0;
+ref_params.throttle_adc_before = 0;
+ref_params.throttle_adc_after = 2048;
+ref_params.throttle_step_time = 0.05;
+ref_params.throttle_torque_max = 0.2;
 
 if isfield(overrides, 'motor_params')
     motor_params = merge_struct(motor_params, overrides.motor_params);

@@ -6,10 +6,11 @@ namespace pmsm {
 
 // ===================== Stateless Step Function =====================
 
-FOCOutput foc_controller_step(
+FOCOutput foc_controller_step_with_iq_ref(
     double ia, double ib, double ic,
     double theta_e, double omega_m,
     double speed_ref, double id_ref,
+    double iq_ref_external, bool use_external_iq_ref,
     double& integral_id, double& integral_iq, double& integral_speed,
     const FOCConfig& config)
 {
@@ -21,16 +22,24 @@ FOCOutput foc_controller_step(
     // --- Park transform: alpha-beta -> dq ---
     DQ dq = park(ab.alpha, ab.beta, theta_e);
 
-    // --- Speed PI controller ---
-    double speed_error = speed_ref - omega_m;
-    integral_speed += speed_error * dt;
-    double iq_ref = config.Kp_speed * speed_error + config.Ki_speed * integral_speed;
-    iq_ref = std::clamp(iq_ref, -config.iq_max, config.iq_max);
+    double iq_ref = 0.0;
+    if (use_external_iq_ref) {
+        iq_ref = std::clamp(iq_ref_external, -config.iq_max, config.iq_max);
+        integral_speed = 0.0;
+    } else {
+        // --- Speed PI controller ---
+        double speed_error = speed_ref - omega_m;
+        integral_speed += speed_error * dt;
+        iq_ref = config.Kp_speed * speed_error + config.Ki_speed * integral_speed;
+        iq_ref = std::clamp(iq_ref, -config.iq_max, config.iq_max);
 
-    // Anti-windup for speed loop
-    double iq_ref_unsat = config.Kp_speed * speed_error + config.Ki_speed * integral_speed;
-    if (iq_ref != iq_ref_unsat) {
-        integral_speed = (iq_ref - config.Kp_speed * speed_error) / config.Ki_speed;
+        // Anti-windup for speed loop
+        if (std::abs(config.Ki_speed) > 1e-12) {
+            double iq_ref_unsat = config.Kp_speed * speed_error + config.Ki_speed * integral_speed;
+            if (iq_ref != iq_ref_unsat) {
+                integral_speed = (iq_ref - config.Kp_speed * speed_error) / config.Ki_speed;
+            }
+        }
     }
 
     // --- d-axis current PI controller ---
@@ -75,6 +84,22 @@ FOCOutput foc_controller_step(
     output.iq_ref = iq_ref;
 
     return output;
+}
+
+FOCOutput foc_controller_step(
+    double ia, double ib, double ic,
+    double theta_e, double omega_m,
+    double speed_ref, double id_ref,
+    double& integral_id, double& integral_iq, double& integral_speed,
+    const FOCConfig& config)
+{
+    return foc_controller_step_with_iq_ref(
+        ia, ib, ic,
+        theta_e, omega_m,
+        speed_ref, id_ref,
+        0.0, false,
+        integral_id, integral_iq, integral_speed,
+        config);
 }
 
 // ===================== Stateful Controller Class =====================
