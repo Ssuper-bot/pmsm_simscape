@@ -37,8 +37,8 @@
 
 模块职责：
 
-- `signal_in`：速度参考、`id_ref`、负载阶跃输入
-- `foc_controller`：Clarke/Park/PI/InvPark/SVPWM 控制链
+- `signal_in`：速度参考、`id_ref`、负载阶跃输入、`throttle -> torque_ref`
+- `foc_controller`：Clarke/Park/PI/InvPark/SVPWM 控制链；新增 `torque_ref` 在线换算 `iq_ref`
 - `three-invertor`：三相平均逆变器
 - `motor`：PMSM dq 方程与积分状态
 - `measure`：电流透传、`theta_m -> theta_e`、速度输出
@@ -88,6 +88,21 @@
 5. `omega_m`
 6. `speed_ref`
 7. `id_ref`
+
+模块化 builder（`pmsm_foc_builder.m`）当前 all-in 子系统接口额外包含：
+
+- `FOC Controller` 第 8 输入：`torque_ref`（由 `Signal In` 的 `throttle` 线性映射后提供）
+- `Signal In` 第 4 输出：`torque_ref`
+
+`torque_ref -> iq_ref` 换算关系（在 FOC 子系统内）：
+
+$$
+K_t = 1.5\,p\,(\psi_f + (L_d-L_q)i_d),\quad
+iq_{ref} = \begin{cases}
+0,& |K_t| < 10^{-6}\\
+\dfrac{T_e^{ref}}{K_t},& \text{otherwise}
+\end{cases}
+$$
 
 输出端口（1 个端口，宽度 5）：
 

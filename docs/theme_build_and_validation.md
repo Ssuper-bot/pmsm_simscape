@@ -88,6 +88,7 @@ S-Function 编译：
 - 验证内容依次包括：模型保存、`update diagram` 编译、短时仿真。
 - 当前已验证通过：6 个独立模块 + `pmsm_foc_model` all-in 模型。
 - 当前残留风险：all-in 模型存在 1 个代数环告警，但不阻塞短时仿真。
+- 接口更新：`signal_in` 新增 `throttle` 生成链路并输出 `torque_ref`，all-in 模型连到 `FOC Controller` 第 8 输入。
 
 ## ROS2 运行入口
 
