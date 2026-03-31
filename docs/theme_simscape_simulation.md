@@ -22,6 +22,35 @@
 - 构建并注入 `motor_params`、`inv_params`、`ctrl_params`、`sim_params`、`ref_params` 到 base workspace。
 - 若检测到 S-Function 源文件，调用 `build_sfun_foc` 编译 MEX。
 - 删除旧 `pmsm_foc_model.slx` 后重新生成模型（保证脚本改动生效）。
+- 当前生成逻辑已改为“模块先构建、最后总装”的结构：`pmsm_foc_simscape.m` 通过 `create_pmsm_foc_all_in_model.m` 调用共享 builder 生成 all-in 模型。
+
+模块化入口：
+
+- `create_signal_in_module.m`
+- `create_foc_controller_module.m`
+- `create_three_invertor_module.m`
+- `create_motor_module.m`
+- `create_measure_module.m`
+- `create_scope_module.m`
+- `create_pmsm_foc_all_in_model.m`
+- `validate_pmsm_foc_modules.m`
+
+模块职责：
+
+- `signal_in`：速度参考、`id_ref`、负载阶跃输入
+- `foc_controller`：Clarke/Park/PI/InvPark/SVPWM 控制链
+- `three-invertor`：三相平均逆变器
+- `motor`：PMSM dq 方程与积分状态
+- `measure`：电流透传、`theta_m -> theta_e`、速度输出
+- `scope`：速度、电流、转矩观测
+
+总装模型：
+
+- all-in 模型仍默认输出到 `matlab/models/pmsm_foc_model.slx`，因此旧入口和大部分既有脚本不需要改调用名。
+
+验证方式：
+
+- `validate_pmsm_foc_modules` 会依次为每个模块生成独立 harness 模型，执行保存、`update diagram`、短时仿真，并在最后验证 all-in 模型。
 
 重要参数差异：
 
@@ -92,8 +121,8 @@
 
 ## 待确认项
 
-- `create_pmsm_foc_model.m` 具体连线与模块细节本文未展开（未验证/待确认）。
 - Simscape 路径与独立脚本路径在默认 `Vdc` 参数上不一致，联调时需显式统一。
+- all-in 模型当前短仿真可通过，但仍存在 1 个代数环告警，主要位于 `FOC Controller -> Three Invertor -> Motor -> Measure -> FOC Controller` 闭环；当前未阻塞构建验证，但后续若要做更稳定的数值仿真，建议引入离散控制采样或显式延时。
 
 ## 关联文档
 

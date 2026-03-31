@@ -1,5 +1,5 @@
-function model_path = create_pmsm_foc_model(model_name, motor_params, inv_params, ctrl_params, sim_params, ref_params)
-%CREATE_PMSM_FOC_MODEL Compatibility wrapper for the modular all-in builder.
+function model_path = create_pmsm_foc_all_in_model(model_name, motor_params, inv_params, ctrl_params, sim_params, ref_params)
+%CREATE_PMSM_FOC_ALL_IN_MODEL Build the assembled PMSM FOC Simulink model.
 
 if nargin == 0
     [motor_params, inv_params, ctrl_params, sim_params, ref_params] = pmsm_foc_builder('default_parameters');

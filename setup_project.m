@@ -25,5 +25,8 @@ fprintf('MATLAB paths added.\n\n');
 fprintf('Available commands:\n');
 fprintf('  run_pmsm_simulation   - Standalone FOC simulation (no Simscape needed)\n');
 fprintf('  pmsm_foc_simscape     - Simscape model setup (requires Simulink + Simscape)\n');
+fprintf('  create_*_module       - Build standalone Simulink module harness models\n');
+fprintf('  create_pmsm_foc_all_in_model - Build the assembled all-in Simulink model\n');
+fprintf('  validate_pmsm_foc_modules - Build/compile/short-sim all modules and all-in\n');
 fprintf('  test_pmsm_lib         - Run MATLAB unit tests\n');
 fprintf('  build_sfun_foc        - Compile C++ S-Function MEX\n');

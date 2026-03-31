@@ -72,6 +72,23 @@ S-Function 编译：
 - 独立仿真：`matlab/scripts/run_pmsm_simulation.m`
 - Simscape 路径：`matlab/simscape/pmsm_foc_simscape.m`
 
+模块化 Simulink 构建入口：
+
+- `matlab/simscape/create_signal_in_module.m`
+- `matlab/simscape/create_foc_controller_module.m`
+- `matlab/simscape/create_three_invertor_module.m`
+- `matlab/simscape/create_motor_module.m`
+- `matlab/simscape/create_measure_module.m`
+- `matlab/simscape/create_scope_module.m`
+- `matlab/simscape/create_pmsm_foc_all_in_model.m`
+
+模块化验证入口：
+
+- `matlab/simscape/validate_pmsm_foc_modules.m`
+- 验证内容依次包括：模型保存、`update diagram` 编译、短时仿真。
+- 当前已验证通过：6 个独立模块 + `pmsm_foc_model` all-in 模型。
+- 当前残留风险：all-in 模型存在 1 个代数环告警，但不阻塞短时仿真。
+
 ## ROS2 运行入口
 
 - Launch 文件：`python/launch/pmsm_system.launch.py`
@@ -84,9 +101,14 @@ S-Function 编译：
 3. 然后验证 Simscape 与 S-Function 路径。
 4. 最后验证 ROS2 与 MATLAB 桥接端到端链路。
 
+若要按模块迭代 Simulink：
+
+1. 先运行对应 `create_*_module` 脚本，确认单模块结构和接口。
+2. 再运行 `validate_pmsm_foc_modules(false)` 只检查模块。
+3. 模块稳定后运行 `create_pmsm_foc_all_in_model` 或 `validate_pmsm_foc_modules(true)` 验证总装模型。
+
 ## 未验证/待确认
 
-- 本次文档更新未执行上述构建和运行命令，仅基于代码与脚本静态核对。
 - pybind11、MATLAB Engine API、ROS2 工作区实际环境依赖未在本次确认。
 
 ## 关联文档

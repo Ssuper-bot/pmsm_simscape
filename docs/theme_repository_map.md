@@ -39,6 +39,9 @@
 
 - MATLAB 初始化：`setup_project.m`
 - Simscape 主入口：`matlab/simscape/pmsm_foc_simscape.m`
+- Simulink 模块入口：`matlab/simscape/create_*_module.m`
+- Simulink 总装入口：`matlab/simscape/create_pmsm_foc_all_in_model.m`
+- Simulink 模块验证：`matlab/simscape/validate_pmsm_foc_modules.m`
 - 独立仿真入口：`matlab/scripts/run_pmsm_simulation.m`
 - C++ 构建入口：`cpp/CMakeLists.txt`
 - ROS2 系统入口：`python/launch/pmsm_system.launch.py`
