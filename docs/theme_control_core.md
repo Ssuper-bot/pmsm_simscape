@@ -20,7 +20,8 @@
 
 - 电流环：`Kp_id`、`Ki_id`、`Kp_iq`、`Ki_iq`
 - 速度环：`Kp_speed`、`Ki_speed`
-- 电机参数：`Rs`、`Ld`、`Lq`、`flux_pm`、`pole_pairs`
+- 电机参数：`Rs`、`Ld`、`Lq`、`flux_pm`、`pole_pairs`、`J`、`B`
+- 带宽参数：`omega_ci`、`omega_cs`
 - 限幅：`iq_max`、`id_max`
 - 系统：`Vdc`、`Ts`
 
@@ -52,6 +53,10 @@
 
 实现特征（`cpp/src/foc_controller.cpp`）：
 
+- PI 增益优先由电机参数自动整定（零点消极点）：
+	- 电流环：$K_p=L\omega_{ci},\ K_i=R_s\omega_{ci}$，满足 $K_i/K_p=R_s/L$
+	- 速度环：$K_p=J\omega_{cs}/K_t,\ K_i=B\omega_{cs}/K_t$，满足 $K_i/K_p=B/J$
+	- 其中 $K_t=1.5\,p\,\psi_f$
 - 速度环带 `iq_ref` 限幅与抗积分饱和回算。
 - 电流环为 PI，含 dq 解耦前馈项。
 - 电压矢量按 `Vdc/sqrt(3)` 幅值限幅。

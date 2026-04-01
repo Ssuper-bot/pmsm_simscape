@@ -31,6 +31,13 @@ struct FOCConfig {
     double Lq = 1.4e-3;        // q-axis inductance [H]
     double flux_pm = 0.0577;   // PM flux linkage [Wb]
     int    pole_pairs = 4;
+    double J = 1.74e-5;        // Rotor inertia [kg*m^2]
+    double B = 1e-4;           // Viscous damping [N*m*s]
+    // PI auto-tuning bandwidths
+    // omega_ci <= 0: derive from switching frequency (fsw/10).
+    // omega_cs <= 0: derive from current-loop bandwidth (omega_ci/10).
+    double omega_ci = 0.0;     // Current-loop bandwidth [rad/s]
+    double omega_cs = 0.0;     // Speed-loop bandwidth [rad/s]
     // Limits
     double iq_max = 10.0;      // Max q-axis current [A]
     double id_max = 10.0;      // Max d-axis current [A]
@@ -38,6 +45,16 @@ struct FOCConfig {
     double Vdc = 24.0;         // DC bus voltage [V]
     double Ts = 50e-6;         // Sample time [s]
 };
+
+/**
+ * @brief Derive PI gains from motor parameters and loop bandwidths.
+ *
+ * Uses zero-pole cancellation design:
+ *   current loop: Ki/Kp = Rs/L,  Kp = L*omega_ci, Ki = Rs*omega_ci
+ *   speed loop:   Ki/Kp = B/J,   Kp = J*omega_cs/Kt, Ki = B*omega_cs/Kt
+ * where Kt = 1.5 * pole_pairs * flux_pm (id_ref ~ 0 region).
+ */
+FOCConfig derive_pi_gains_from_motor(const FOCConfig& config);
 
 /** FOC controller output */
 struct FOCOutput {

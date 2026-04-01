@@ -98,12 +98,14 @@ inv_params.Tsw = 1 / inv_params.fsw;
 inv_params.dead_time = 1e-6;
 
 ctrl_params = struct();
-ctrl_params.Kp_id = 5.0;
-ctrl_params.Ki_id = 1000.0;
-ctrl_params.Kp_iq = 5.0;
-ctrl_params.Ki_iq = 1000.0;
-ctrl_params.Kp_speed = 0.5;
-ctrl_params.Ki_speed = 10.0;
+ctrl_params.omega_ci = 0.0;
+ctrl_params.omega_cs = 0.0;
+ctrl_params.Kp_id = 0.0;
+ctrl_params.Ki_id = 0.0;
+ctrl_params.Kp_iq = 0.0;
+ctrl_params.Ki_iq = 0.0;
+ctrl_params.Kp_speed = 0.0;
+ctrl_params.Ki_speed = 0.0;
 ctrl_params.id_max = 10.0;
 ctrl_params.iq_max = 10.0;
 ctrl_params.speed_max = 3000;
@@ -124,9 +126,12 @@ ref_params.load_step_time = 0.3;
 ref_params.id_ref = 0;
 ref_params.throttle = 0.2;
 ref_params.throttle_torque_max = 0.8;
+
+ctrl_params = derive_pi_ctrl_params(ctrl_params, motor_params, inv_params);
 end
 
 function model_path = create_module_model(module_name, model_name, motor_params, inv_params, ctrl_params, sim_params, ref_params)
+ctrl_params = derive_pi_ctrl_params(ctrl_params, motor_params, inv_params);
 short_stop_time = min(sim_params.validation_t_end, sim_params.t_end);
 model_path = initialize_model(model_name, sim_params, short_stop_time);
 
@@ -262,6 +267,7 @@ save_generated_model(model_name, model_path);
 end
 
 function model_path = create_all_in_model(model_name, motor_params, inv_params, ctrl_params, sim_params, ref_params)
+ctrl_params = derive_pi_ctrl_params(ctrl_params, motor_params, inv_params);
 model_path = initialize_model(model_name, sim_params, sim_params.t_end);
 
 add_block('built-in/Subsystem', [model_name '/Signal In']);
@@ -317,6 +323,41 @@ add_line(model_name, 'FOC Controller/3', 'Scope/3', 'autorouting', 'smart');
 add_line(model_name, 'Motor/5', 'Scope/4', 'autorouting', 'smart');
 
 save_generated_model(model_name, model_path);
+end
+
+function ctrl_params = derive_pi_ctrl_params(ctrl_params, motor_params, inv_params)
+if ~isfield(ctrl_params, 'omega_ci') || isempty(ctrl_params.omega_ci) || ctrl_params.omega_ci <= 0
+    omega_ci = 2*pi*(inv_params.fsw / 10.0);
+else
+    omega_ci = ctrl_params.omega_ci;
+end
+
+if ~isfield(ctrl_params, 'omega_cs') || isempty(ctrl_params.omega_cs) || ctrl_params.omega_cs <= 0
+    omega_cs = omega_ci / 10.0;
+else
+    omega_cs = ctrl_params.omega_cs;
+end
+
+ctrl_params.omega_ci = omega_ci;
+ctrl_params.omega_cs = omega_cs;
+
+Rs = max(motor_params.Rs, 1e-12);
+Ld = max(motor_params.Ld, 1e-12);
+Lq = max(motor_params.Lq, 1e-12);
+
+% Current-loop PI: zero cancels electrical pole at Rs/L.
+ctrl_params.Kp_id = Ld * omega_ci;
+ctrl_params.Ki_id = Rs * omega_ci;
+ctrl_params.Kp_iq = Lq * omega_ci;
+ctrl_params.Ki_iq = Rs * omega_ci;
+
+J = max(motor_params.J, 1e-12);
+B = max(motor_params.B, 1e-12);
+Kt = max(1.5 * motor_params.p * motor_params.flux_pm, 1e-12);
+
+% Speed-loop PI: zero cancels mechanical pole at B/J.
+ctrl_params.Kp_speed = (J * omega_cs) / Kt;
+ctrl_params.Ki_speed = (B * omega_cs) / Kt;
 end
 
 function result = validate_model(model_name, stop_time)

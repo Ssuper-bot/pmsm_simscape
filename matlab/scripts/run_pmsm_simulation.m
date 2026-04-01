@@ -32,14 +32,17 @@ inv_params.fsw = 20e3;           % Switching frequency [Hz]
 
 %% ===== Controller Parameters =====
 ctrl_params = struct();
-ctrl_params.Kp_id = 5.0;         % d-axis current P gain
-ctrl_params.Ki_id = 1000.0;      % d-axis current I gain
-ctrl_params.Kp_iq = 5.0;         % q-axis current P gain
-ctrl_params.Ki_iq = 1000.0;      % q-axis current I gain
-ctrl_params.Kp_speed = 0.5;      % Speed P gain
-ctrl_params.Ki_speed = 10.0;     % Speed I gain
+ctrl_params.omega_ci = 2*pi*(inv_params.fsw / 10.0);  % Current-loop BW [rad/s]
+ctrl_params.omega_cs = ctrl_params.omega_ci / 10.0;   % Speed-loop BW [rad/s]
+ctrl_params.Kp_id = 0.0;
+ctrl_params.Ki_id = 0.0;
+ctrl_params.Kp_iq = 0.0;
+ctrl_params.Ki_iq = 0.0;
+ctrl_params.Kp_speed = 0.0;
+ctrl_params.Ki_speed = 0.0;
 ctrl_params.iq_max = 10.0;       % Max q-axis current [A]
 ctrl_params.id_max = 10.0;       % Max d-axis current [A]
+ctrl_params = derive_pi_ctrl_params(ctrl_params, motor_params);
 
 %% ===== Simulation Parameters =====
 sim_params = struct();
@@ -58,6 +61,8 @@ fprintf('=== PMSM FOC Standalone Simulation ===\n');
 fprintf('Motor: Rs=%.3f Ohm, Ld=%.3e H, flux=%.4f Wb, %d pole pairs\n', ...
     motor_params.Rs, motor_params.Ld, motor_params.flux_pm, motor_params.p);
 fprintf('Target speed: %d RPM, Vdc: %d V\n', ref_params.speed_ref, inv_params.Vdc);
+fprintf('Auto PI: omega_ci=%.1f rad/s, omega_cs=%.1f rad/s\n', ...
+    ctrl_params.omega_ci, ctrl_params.omega_cs);
 
 %% Configuration
 use_cpp_controller = false;  % Set true to use C++ MEX controller
@@ -211,3 +216,20 @@ sgtitle('PMSM FOC Simulation Results');
 fprintf('Simulation complete.\n');
 fprintf('Final speed: %.1f RPM (ref: %.1f RPM)\n', ...
     x_log(3,end)*60/(2*pi), ref_log(1,end)*60/(2*pi));
+
+function ctrl_params = derive_pi_ctrl_params(ctrl_params, motor_params)
+Rs = max(motor_params.Rs, 1e-12);
+Ld = max(motor_params.Ld, 1e-12);
+Lq = max(motor_params.Lq, 1e-12);
+J = max(motor_params.J, 1e-12);
+B = max(motor_params.B, 1e-12);
+Kt = max(1.5 * motor_params.p * motor_params.flux_pm, 1e-12);
+
+ctrl_params.Kp_id = Ld * ctrl_params.omega_ci;
+ctrl_params.Ki_id = Rs * ctrl_params.omega_ci;
+ctrl_params.Kp_iq = Lq * ctrl_params.omega_ci;
+ctrl_params.Ki_iq = Rs * ctrl_params.omega_ci;
+
+ctrl_params.Kp_speed = (J * ctrl_params.omega_cs) / Kt;
+ctrl_params.Ki_speed = (B * ctrl_params.omega_cs) / Kt;
+end

@@ -33,6 +33,9 @@ PYBIND11_MODULE(_pmsm_cpp, m) {
         return std::make_tuple(duty.da, duty.db, duty.dc);
     }, "Space Vector PWM");
 
+    m.def("derive_pi_gains_from_motor", &pmsm::derive_pi_gains_from_motor,
+          "Derive PI gains from motor parameters and loop bandwidths");
+
     // FOCConfig
     py::class_<pmsm::FOCConfig>(m, "FOCConfig")
         .def(py::init<>())
@@ -47,6 +50,10 @@ PYBIND11_MODULE(_pmsm_cpp, m) {
         .def_readwrite("Lq", &pmsm::FOCConfig::Lq)
         .def_readwrite("flux_pm", &pmsm::FOCConfig::flux_pm)
         .def_readwrite("pole_pairs", &pmsm::FOCConfig::pole_pairs)
+        .def_readwrite("J", &pmsm::FOCConfig::J)
+        .def_readwrite("B", &pmsm::FOCConfig::B)
+        .def_readwrite("omega_ci", &pmsm::FOCConfig::omega_ci)
+        .def_readwrite("omega_cs", &pmsm::FOCConfig::omega_cs)
         .def_readwrite("iq_max", &pmsm::FOCConfig::iq_max)
         .def_readwrite("id_max", &pmsm::FOCConfig::id_max)
         .def_readwrite("Vdc", &pmsm::FOCConfig::Vdc)

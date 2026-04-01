@@ -15,6 +15,10 @@
 #include "mex.h"
 #include "foc_controller.h"
 
+static bool hasField(const mxArray* s, const char* name) {
+    return mxGetField(s, 0, name) != nullptr;
+}
+
 static pmsm::FOCController g_controller;
 static bool g_initialized = false;
 
@@ -50,6 +54,12 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
             config.Ki_speed = mxGetScalar(mxGetField(ctrl, 0, "Ki_speed"));
             config.iq_max   = mxGetScalar(mxGetField(ctrl, 0, "iq_max"));
             config.id_max   = mxGetScalar(mxGetField(ctrl, 0, "id_max"));
+            if (hasField(ctrl, "omega_ci")) {
+                config.omega_ci = mxGetScalar(mxGetField(ctrl, 0, "omega_ci"));
+            }
+            if (hasField(ctrl, "omega_cs")) {
+                config.omega_cs = mxGetScalar(mxGetField(ctrl, 0, "omega_cs"));
+            }
         }
 
         // motor_params struct
@@ -60,6 +70,12 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
             config.Lq       = mxGetScalar(mxGetField(motor, 0, "Lq"));
             config.flux_pm  = mxGetScalar(mxGetField(motor, 0, "flux_pm"));
             config.pole_pairs = static_cast<int>(mxGetScalar(mxGetField(motor, 0, "p")));
+            if (hasField(motor, "J")) {
+                config.J = mxGetScalar(mxGetField(motor, 0, "J"));
+            }
+            if (hasField(motor, "B")) {
+                config.B = mxGetScalar(mxGetField(motor, 0, "B"));
+            }
         }
 
         config.Ts = dt;

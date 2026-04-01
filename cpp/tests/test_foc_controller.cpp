@@ -104,6 +104,34 @@ void test_foc_controller_class() {
     printf("  FOC Controller Class: PASS\n");
 }
 
+void test_motor_based_pi_derivation() {
+    pmsm::FOCConfig config;
+    config.Ts = 1.0 / 20000.0;
+    config.Rs = 0.5;
+    config.Ld = 1.4e-3;
+    config.Lq = 1.4e-3;
+    config.flux_pm = 0.0577;
+    config.pole_pairs = 4;
+    config.J = 1.74e-5;
+    config.B = 1e-4;
+    config.omega_ci = 0.0;
+    config.omega_cs = 0.0;
+
+    auto tuned = pmsm::derive_pi_gains_from_motor(config);
+
+    double omega_ci_expected = 2.0 * M_PI * (20000.0 / 10.0);
+    double omega_cs_expected = omega_ci_expected / 10.0;
+    double kt = 1.5 * config.pole_pairs * config.flux_pm;
+
+    assert(approx_eq(tuned.omega_ci, omega_ci_expected, 1e-9));
+    assert(approx_eq(tuned.omega_cs, omega_cs_expected, 1e-9));
+    assert(approx_eq(tuned.Kp_id, config.Ld * omega_ci_expected, 1e-9));
+    assert(approx_eq(tuned.Ki_id, config.Rs * omega_ci_expected, 1e-9));
+    assert(approx_eq(tuned.Kp_speed, (config.J * omega_cs_expected) / kt, 1e-9));
+    assert(approx_eq(tuned.Ki_speed, (config.B * omega_cs_expected) / kt, 1e-9));
+    printf("  Motor-based PI derivation: PASS\n");
+}
+
 int main() {
     printf("Running FOC Controller Tests...\n");
     test_clarke_transform();
@@ -113,6 +141,7 @@ int main() {
     test_pi_controller();
     test_foc_controller_step();
     test_foc_controller_class();
+    test_motor_based_pi_derivation();
     printf("All tests PASSED.\n");
     return 0;
 }
