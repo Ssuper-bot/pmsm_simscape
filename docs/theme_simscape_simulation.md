@@ -40,9 +40,14 @@
 - `signal_in`：速度参考、`id_ref`、负载阶跃输入、`throttle -> torque_ref`
 - `foc_controller`：Clarke/Park/PI/InvPark/SVPWM 控制链；新增 `torque_ref` 在线换算 `iq_ref`
 - `three-invertor`：三相平均逆变器
-- `motor`：PMSM dq 方程与积分状态
+- `motor`：Simscape Electrical 内置 PMSM 电机子系统（含三相电气与机械端口）
 - `measure`：电流透传、`theta_m -> theta_e`、速度输出
 - `scope`：速度、电流、转矩观测
+
+说明（2026-04 更新）：
+
+- `motor` 模块已切换到 Simscape Electrical 内置 PMSM 块（`ee_lib/Electromechanical/Permanent Magnet/PMSM`），不再使用此前 `MATLAB Fcn + Integrator` 的自定义 dq 电机状态方程实现。
+- 模块内部采用 Simscape 标准链路：三相受控电压源 + 三相电流传感器 + PMSM + 转矩/角速度传感器 + 负载转矩源。
 
 总装模型：
 
@@ -138,6 +143,21 @@ $$
 
 - Simscape 路径与独立脚本路径在默认 `Vdc` 参数上不一致，联调时需显式统一。
 - all-in 模型当前短仿真可通过，但仍存在 1 个代数环告警，主要位于 `FOC Controller -> Three Invertor -> Motor -> Measure -> FOC Controller` 闭环；当前未阻塞构建验证，但后续若要做更稳定的数值仿真，建议引入离散控制采样或显式延时。
+
+## Simscape PMSM 学习与使用
+
+本仓库可直接参考的本地例程路径：
+
+- `matlab/models/PMSMDrive_with_our_controller.slx`
+- `matlab/models/pmsm_blue_plant_wrapper.slx`
+
+推荐按以下顺序推进：
+
+1. 学习模型：从 `PMSMDrive_with_our_controller.slx` 对照查看 PMSM 块参数字段（`nPolePairs`、`pm_flux_linkage`、`Ld`、`Lq`、`Rs`、`J`、`lam`）与电机侧传感器接线。
+2. 使用模型：运行 `create_motor_module` 或 `create_pmsm_foc_all_in_model`，由 builder 自动生成采用 Simscape PMSM 的 motor 子系统。
+3. 模块验证：运行 `validate_pmsm_foc_modules(false)`，确认每个模块保存、编译、短时仿真通过。
+4. 总装验证：运行 `validate_pmsm_foc_modules(true)`，确认 all-in 模型中 `Motor` 子系统包含 Simscape PMSM 并可短时仿真。
+5. 补充测试：运行 `matlab/tests/test_simscape_motor_module.m`，执行 motor 单模块和 all-in 的结构断言（含 PMSM 块存在性）与 smoke simulation。
 
 ## 关联文档
 

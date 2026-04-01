@@ -22,6 +22,9 @@ for module_index = 1:size(module_specs, 1)
     model_name = module_specs{module_index, 2};
     fprintf('Building module: %s\n', module_name);
     pmsm_foc_builder('create_module_model', module_name, model_name);
+    if strcmp(module_name, 'motor')
+        assert_motor_uses_simscape_pmsm(model_name);
+    end
     results(end + 1, 1) = pmsm_foc_builder('validate_model', model_name, sim_params.validation_t_end); %#ok<AGROW>
 end
 
@@ -29,6 +32,7 @@ if run_all_in
     all_in_name = 'pmsm_foc_model';
     fprintf('Building all-in model: %s\n', all_in_name);
     create_pmsm_foc_all_in_model(all_in_name);
+    assert_motor_uses_simscape_pmsm([all_in_name '/Motor']);
     results(end + 1, 1) = pmsm_foc_builder('validate_model', all_in_name, sim_params.validation_t_end); %#ok<AGROW>
 end
 
@@ -39,5 +43,18 @@ for result_index = 1:numel(results)
         status = 'PASS';
     end
     fprintf('  [%s] %s - %s\n', status, results(result_index).model_name, results(result_index).message);
+end
+end
+
+function assert_motor_uses_simscape_pmsm(root_path)
+pmsm_blocks = find_system(root_path, ...
+    'LookUnderMasks', 'all', ...
+    'FollowLinks', 'on', ...
+    'FindAll', 'off', ...
+    'Regexp', 'on', ...
+    'ReferenceBlock', 'ee_lib/Electromechanical/Permanent Magnet/PMSM');
+
+if isempty(pmsm_blocks)
+    error('Expected Simscape PMSM block not found under: %s', root_path);
 end
 end

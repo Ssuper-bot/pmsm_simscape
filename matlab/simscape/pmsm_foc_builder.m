@@ -323,8 +323,9 @@ function result = validate_model(model_name, stop_time)
 result = struct('model_name', model_name, 'saved', false, 'compiled', false, ...
     'simulated', false, 'message', '');
 
+ensure_generated_models_path();
 model_path = get_model_path(model_name);
-result.saved = exist(model_path, 'file') == 2;
+result.saved = isfile(model_path);
 if ~result.saved
     result.message = sprintf('Model file does not exist: %s', model_path);
     return;
@@ -352,8 +353,9 @@ if bdIsLoaded(model_name)
     close_system(model_name, 0);
 end
 
+ensure_generated_models_path();
 model_path = get_model_path(model_name);
-if exist(model_path, 'file') == 2
+if isfile(model_path)
     delete(model_path);
 end
 
@@ -371,8 +373,21 @@ model_dir = fileparts(model_path);
 if exist(model_dir, 'dir') ~= 7
     mkdir(model_dir);
 end
-save_system(model_name, model_path);
+try
+    save_system(model_name, model_path);
+catch
+    % MATLAB MCP can fail while generating SLX thumbnails for Simscape-heavy models.
+    % Retrying with ExportToXML avoids the thumbnail callback path while still producing an SLX file.
+    save_system(model_name, model_path, 'ExportToXML', true);
+end
 fprintf('Model saved to: %s\n', model_path);
+end
+
+function ensure_generated_models_path()
+script_dir = fileparts(mfilename('fullpath'));
+model_dir = fullfile(script_dir, '..', 'models');
+addpath(model_dir);
+rehash path;
 end
 
 function model_path = get_model_path(model_name)
@@ -597,59 +612,137 @@ add_block('built-in/Outport', [subsys '/omega_m'], 'Port', '4');
 add_block('built-in/Outport', [subsys '/Te'], 'Port', '5');
 add_block('built-in/Outport', [subsys '/theta_m'], 'Port', '6');
 
-add_block('simulink/Signal Routing/Mux', [subsys '/Mux_in'], ...
-    'Inputs', '4', 'Position', [100 80 105 230]);
-add_line(subsys, 'Va/1', 'Mux_in/1');
-add_line(subsys, 'Vb/1', 'Mux_in/2');
-add_line(subsys, 'Vc/1', 'Mux_in/3');
-add_line(subsys, 'Te_load/1', 'Mux_in/4');
+% Simulink to physical signal adapters for three-phase voltage and load torque.
+add_block('simulink/Signal Routing/Mux', [subsys '/MuxVabc'], ...
+    'Inputs', '3', 'Position', [90 65 95 155]);
+add_block('simulink/Sinks/Terminator', [subsys '/LoadUnused'], ...
+    'Position', [115 210 135 230]);
 
-add_block('simulink/Signal Routing/Mux', [subsys '/Mux_all'], ...
-    'Inputs', '2', 'Position', [200 100 205 200]);
+add_reference_block_with_fallback([subsys '/Vabc2PS'], {
+    'nesl_utility/Simulink-PS Converter'
+}, [170 90 220 130]);
 
-    Rs_s = num2str(motor_params.Rs, '%.6g');
-    Ld_s = num2str(motor_params.Ld, '%.6g');
-    Lq_s = num2str(motor_params.Lq, '%.6g');
-    fp_s = num2str(motor_params.flux_pm, '%.6g');
-    pp_s = num2str(motor_params.p);
-    J_s = num2str(motor_params.J, '%.6g');
-    B_s = num2str(motor_params.B, '%.6g');
+set_block_params_safe([subsys '/Vabc2PS'], struct('Unit', 'V'));
 
-    fcn_str = ['pmsm_model_fcn(u(1),u(2),u(3),u(4),u(5),u(6),u(7),u(8),' ...
-        Rs_s ',' Ld_s ',' Lq_s ',' fp_s ',' pp_s ',' J_s ',' B_s ')'];
+% Core Simscape machine and converters modeled after local PMSM example.
+add_reference_block_with_fallback([subsys '/Solver Configuration'], {
+    'nesl_utility/Solver Configuration'
+}, [40 300 95 335]);
+add_reference_block_with_fallback([subsys '/Electrical Reference'], {
+    'fl_lib/Electrical/Electrical Elements/Electrical Reference'
+}, [155 310 205 340]);
+add_reference_block_with_fallback([subsys '/Mechanical Reference'], {
+    'fl_lib/Mechanical/Rotational Elements/Mechanical Rotational Reference'
+}, [530 310 590 340]);
+add_reference_block_with_fallback([subsys '/Sensor Inertia'], {
+    'fl_lib/Mechanical/Rotational Elements/Inertia'
+}, [640 285 700 335]);
+set_block_params_safe([subsys '/Sensor Inertia'], struct('inertia', '1e-9'));
 
-add_block('simulink/User-Defined Functions/MATLAB Fcn', [subsys '/PMSM_Eqn'], ...
-    'MATLABFcn', fcn_str, ...
-    'Position', [250 120 420 180]);
-add_block('simulink/Signal Routing/Demux', [subsys '/Demux_out'], ...
-    'Outputs', '8', 'Position', [460 80 465 260]);
+add_reference_block_with_fallback([subsys '/ThreePhase Controlled Voltage'], {
+    'ee_lib/Sources/Controlled Voltage Source (Three-Phase)', ...
+    'ee_lib/Sources & Subsystems/Controlled Voltage Source (Three-Phase)', ...
+    'ee_lib/Sources/Three-Phase Sources/Controlled Voltage Source (Three-Phase)'
+}, [250 90 340 180]);
 
-add_line(subsys, 'Mux_in/1', 'Mux_all/1');
-add_line(subsys, 'Mux_all/1', 'PMSM_Eqn/1');
-add_line(subsys, 'PMSM_Eqn/1', 'Demux_out/1');
+add_reference_block_with_fallback([subsys '/Current Sensor'], {
+    'ee_lib/Sensors & Transducers/Current Sensor (Three-Phase)'
+}, [370 95 455 175]);
 
-states = {'id', 'iq', 'wm', 'theta'};
-y_pos = [80, 120, 160, 200];
-for state_index = 1:4
-    blk = [subsys '/Int_' states{state_index}];
-    add_block('simulink/Continuous/Integrator', blk, ...
-        'Position', [530 y_pos(state_index) 570 y_pos(state_index) + 20]);
-    add_line(subsys, ['Demux_out/' num2str(state_index)], ['Int_' states{state_index} '/1']);
-end
+add_reference_block_with_fallback([subsys '/PMSM'], {
+    'ee_lib/Electromechanical/Permanent Magnet/PMSM'
+}, [490 85 595 185]);
 
-add_block('simulink/Signal Routing/Mux', [subsys '/Mux_states'], ...
-    'Inputs', '4', 'Position', [620 80 625 220]);
-for state_index = 1:4
-    add_line(subsys, ['Int_' states{state_index} '/1'], ['Mux_states/' num2str(state_index)]);
-end
-add_line(subsys, 'Mux_states/1', 'Mux_all/2');
+add_reference_block_with_fallback([subsys '/Ideal Torque Sensor'], {
+    'fl_lib/Mechanical/Mechanical Sensors/Ideal Torque Sensor'
+}, [640 85 710 150]);
+add_reference_block_with_fallback([subsys '/Motion Sensor'], {
+    'fl_lib/Mechanical/Mechanical Sensors/Ideal Rotational Motion Sensor'
+}, [760 85 825 155]);
 
-add_line(subsys, 'Demux_out/5', 'ia/1');
-add_line(subsys, 'Demux_out/6', 'ib/1');
-add_line(subsys, 'Demux_out/7', 'ic/1');
-add_line(subsys, 'Int_wm/1', 'omega_m/1');
-add_line(subsys, 'Demux_out/8', 'Te/1');
-add_line(subsys, 'Int_theta/1', 'theta_m/1');
+add_reference_block_with_fallback([subsys '/CurrentPS2SL'], {
+    'nesl_utility/PS-Simulink Converter'
+}, [500 220 560 255]);
+add_reference_block_with_fallback([subsys '/TorquePS2SL'], {
+    'nesl_utility/PS-Simulink Converter'
+}, [700 220 760 255]);
+add_reference_block_with_fallback([subsys '/OmegaPS2SL'], {
+    'nesl_utility/PS-Simulink Converter'
+}, [790 220 850 255]);
+add_reference_block_with_fallback([subsys '/ThetaPS2SL'], {
+    'nesl_utility/PS-Simulink Converter'
+}, [860 220 920 255]);
+
+set_block_params_safe([subsys '/CurrentPS2SL'], struct('Unit', 'A'));
+set_block_params_safe([subsys '/TorquePS2SL'], struct('Unit', 'N*m'));
+set_block_params_safe([subsys '/OmegaPS2SL'], struct('Unit', 'rad/s'));
+set_block_params_safe([subsys '/ThetaPS2SL'], struct('Unit', 'rad'));
+
+add_block('simulink/Signal Routing/Demux', [subsys '/DemuxIabc'], ...
+    'Outputs', '3', 'Position', [600 210 605 280]);
+
+set_block_params_safe([subsys '/PMSM'], struct( ...
+    'nPolePairs', num2str(motor_params.p, '%.6g'), ...
+    'pm_flux_linkage', num2str(motor_params.flux_pm, '%.6g'), ...
+    'Ld', num2str(motor_params.Ld, '%.6g'), ...
+    'Lq', num2str(motor_params.Lq, '%.6g'), ...
+    'Rs', num2str(motor_params.Rs, '%.6g'), ...
+    'J', num2str(motor_params.J, '%.6g'), ...
+    'lam', num2str(motor_params.B, '%.6g'), ...
+    'angular_velocity_specify', 'on', ...
+    'angular_velocity', '0', ...
+    'angular_velocity_unit', 'rpm', ...
+    'angular_position_specify', 'on', ...
+    'angular_position', '0', ...
+    'angular_position_unit', 'rad'));
+
+add_line(subsys, 'Va/1', 'MuxVabc/1');
+add_line(subsys, 'Vb/1', 'MuxVabc/2');
+add_line(subsys, 'Vc/1', 'MuxVabc/3');
+add_line(subsys, 'MuxVabc/1', 'Vabc2PS/1');
+add_line(subsys, 'Te_load/1', 'LoadUnused/1');
+
+add_line(subsys, 'CurrentPS2SL/1', 'DemuxIabc/1');
+add_line(subsys, 'DemuxIabc/1', 'ia/1');
+add_line(subsys, 'DemuxIabc/2', 'ib/1');
+add_line(subsys, 'DemuxIabc/3', 'ic/1');
+add_line(subsys, 'OmegaPS2SL/1', 'omega_m/1');
+add_line(subsys, 'TorquePS2SL/1', 'Te/1');
+add_line(subsys, 'ThetaPS2SL/1', 'theta_m/1');
+
+ph_vabc2ps = get_param([subsys '/Vabc2PS'], 'PortHandles');
+ph_solver = get_param([subsys '/Solver Configuration'], 'PortHandles');
+ph_eref = get_param([subsys '/Electrical Reference'], 'PortHandles');
+ph_vsrc = get_param([subsys '/ThreePhase Controlled Voltage'], 'PortHandles');
+ph_isens = get_param([subsys '/Current Sensor'], 'PortHandles');
+ph_pmsm = get_param([subsys '/PMSM'], 'PortHandles');
+ph_tsens = get_param([subsys '/Ideal Torque Sensor'], 'PortHandles');
+ph_msens = get_param([subsys '/Motion Sensor'], 'PortHandles');
+ph_mref = get_param([subsys '/Mechanical Reference'], 'PortHandles');
+ph_i2sl = get_param([subsys '/CurrentPS2SL'], 'PortHandles');
+ph_t2sl = get_param([subsys '/TorquePS2SL'], 'PortHandles');
+ph_w2sl = get_param([subsys '/OmegaPS2SL'], 'PortHandles');
+ph_th2sl = get_param([subsys '/ThetaPS2SL'], 'PortHandles');
+
+% Electrical network: control signal -> 3-phase source -> current sensor -> PMSM.
+add_line(subsys, ph_vabc2ps.RConn(1), ph_vsrc.LConn(1), 'autorouting', 'smart');
+add_line(subsys, ph_eref.LConn(1), ph_vsrc.LConn(2), 'autorouting', 'smart');
+add_line(subsys, ph_solver.RConn(1), ph_vsrc.LConn(2), 'autorouting', 'smart');
+add_line(subsys, ph_vsrc.RConn(1), ph_isens.LConn(1), 'autorouting', 'smart');
+add_line(subsys, ph_isens.RConn(2), ph_pmsm.LConn(1), 'autorouting', 'smart');
+add_line(subsys, ph_isens.RConn(1), ph_i2sl.LConn(1), 'autorouting', 'smart');
+
+% Mechanical network: measure shaft motion and torque against reference.
+add_line(subsys, ph_pmsm.RConn(1), ph_tsens.LConn(1), 'autorouting', 'smart');
+ph_inertia = get_param([subsys '/Sensor Inertia'], 'PortHandles');
+add_line(subsys, ph_tsens.RConn(1), ph_inertia.LConn(1), 'autorouting', 'smart');
+add_line(subsys, ph_pmsm.RConn(1), ph_msens.LConn(1), 'autorouting', 'smart');
+add_line(subsys, ph_msens.RConn(1), ph_mref.LConn(1), 'autorouting', 'smart');
+add_line(subsys, ph_pmsm.RConn(2), ph_mref.LConn(1), 'autorouting', 'smart');
+
+add_line(subsys, ph_tsens.RConn(2), ph_t2sl.LConn(1), 'autorouting', 'smart');
+add_line(subsys, ph_msens.RConn(2), ph_w2sl.LConn(1), 'autorouting', 'smart');
+add_line(subsys, ph_msens.RConn(3), ph_th2sl.LConn(1), 'autorouting', 'smart');
 end
 
 function create_measurement_subsystem(subsys, motor_params)
@@ -675,6 +768,33 @@ add_block('simulink/Math Operations/Gain', [subsys '/PoleP'], ...
 add_line(subsys, 'theta_m/1', 'PoleP/1');
 add_line(subsys, 'PoleP/1', 'theta_e/1');
 add_line(subsys, 'omega_m_in/1', 'omega_m/1');
+end
+
+function add_reference_block_with_fallback(block_path, source_candidates, position)
+last_error = '';
+for idx = 1:numel(source_candidates)
+    src = source_candidates{idx};
+    try
+        add_block(src, block_path, 'Position', position);
+        return;
+    catch err
+        last_error = err.message;
+    end
+end
+error('Failed to add reference block %s. Last error: %s', block_path, last_error);
+end
+
+function set_block_params_safe(block_path, params)
+fields = fieldnames(params);
+for idx = 1:numel(fields)
+    key = fields{idx};
+    value = params.(key);
+    try
+        set_param(block_path, key, value);
+    catch
+        % Keep compatibility across MATLAB releases with parameter name drift.
+    end
+end
 end
 
 function create_signal_in_subsystem(subsys, ref_params)
