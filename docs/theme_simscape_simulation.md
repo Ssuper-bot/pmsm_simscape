@@ -1,30 +1,34 @@
 # 仿真与模型体系
 
-本文只讨论 MATLAB/Simulink/Simscape 仿真路径与接口，不展开 ROS2 系统编排。
+本文聚焦 MATLAB、Simulink、Simscape 相关路径与接口，不讨论 ROS2 编排细节。
 
 ## 关键文件
 
-- 主配置脚本：`matlab/simscape/pmsm_foc_simscape.m`
-- 模型创建脚本：`matlab/simscape/create_pmsm_foc_model.m`
-- Simscape 电机组件：`matlab/simscape/pmsm_motor.ssc`
+- 主入口：`matlab/simscape/pmsm_foc_simscape.m`
+- 共享 builder：`matlab/simscape/pmsm_foc_builder.m`
+- 总装入口：`matlab/simscape/create_pmsm_foc_all_in_model.m`
+- 兼容入口：`matlab/simscape/create_pmsm_foc_model.m`
+- Simscape 组件：`matlab/simscape/pmsm_motor.ssc`
 - S-Function 包装：`matlab/s_function/sfun_foc_controller.cpp`
-- S-Function 编译脚本：`matlab/scripts/build_sfun_foc.m`
-- 独立仿真脚本：`matlab/scripts/run_pmsm_simulation.m`
-- 算法函数库：`matlab/+pmsm_lib/`
+- S-Function 编译：`matlab/scripts/build_sfun_foc.m`
+- 独立仿真：`matlab/scripts/run_pmsm_simulation.m`
+- 模块验证：`matlab/simscape/validate_pmsm_foc_modules.m`
+- 电机专项测试：`matlab/tests/test_simscape_motor_module.m`
 
-## 主流程 1：Simscape 模型路径
+## 主流程 1：模块化 Simulink / Simscape builder
 
 入口：`pmsm_foc_simscape.m`
 
-行为要点：
+当前执行逻辑：
 
-- 检查 Simulink 可用性，不可用则提示改用 `run_pmsm_simulation`。
-- 构建并注入 `motor_params`、`inv_params`、`ctrl_params`、`sim_params`、`ref_params` 到 base workspace。
-- 若检测到 S-Function 源文件，调用 `build_sfun_foc` 编译 MEX。
-- 删除旧 `pmsm_foc_model.slx` 后重新生成模型（保证脚本改动生效）。
-- 当前生成逻辑已改为“模块先构建、最后总装”的结构：`pmsm_foc_simscape.m` 通过 `create_pmsm_foc_all_in_model.m` 调用共享 builder 生成 all-in 模型。
+1. 检查 Simulink 是否可用。
+2. 获取默认参数 `motor_params`、`inv_params`、`ctrl_params`、`sim_params`、`ref_params`。
+3. 把参数注入 base workspace。
+4. 如果检测到 `sfun_foc_controller.cpp`，尝试自动编译 MEX。
+5. 删除旧 `matlab/models/pmsm_foc_model.slx`。
+6. 调用 `create_pmsm_foc_all_in_model` 重新生成 all-in 模型。
 
-模块化入口：
+### 模块入口
 
 - `create_signal_in_module.m`
 - `create_foc_controller_module.m`
@@ -32,59 +36,92 @@
 - `create_motor_module.m`
 - `create_measure_module.m`
 - `create_scope_module.m`
-- `create_pmsm_foc_all_in_model.m`
-- `validate_pmsm_foc_modules.m`
 
-模块职责：
+### 模块职责
 
-- `signal_in`：速度参考、`id_ref`、负载阶跃输入、`throttle -> torque_ref`
-- `foc_controller`：Clarke/Park/PI/InvPark/SVPWM 控制链；新增 `torque_ref` 在线换算 `iq_ref`
-- `three-invertor`：三相平均逆变器
-- `motor`：Simscape Electrical 内置 PMSM 电机子系统（含三相电气与机械端口）
-- `measure`：电流透传、`theta_m -> theta_e`、速度输出
-- `scope`：速度、电流、转矩观测
+- `signal_in`
+	生成 `speed_ref`、`id_ref`、`load_torque`，以及由 `throttle` 计算得到的 `torque_ref`。
+- `foc_controller`
+	实现 Clarke / Park / PI / inverse Park / SVPWM 控制链，并把 `torque_ref` 在线换算为 `iq_ref`。
+- `three_invertor`
+	生成三相平均电压输出。
+- `motor`
+	承载 Simscape PMSM 电机与机械链路。
+- `measure`
+	输出三相电流、机械角到电角的换算结果，以及转速量。
+- `scope`
+	聚合速度、电流、转矩等观测量。
 
-说明（2026-04 更新）：
+## 当前电机实现
 
-- `motor` 模块已切换到 Simscape Electrical 内置 PMSM 块（`ee_lib/Electromechanical/Permanent Magnet/PMSM`），不再使用此前 `MATLAB Fcn + Integrator` 的自定义 dq 电机状态方程实现。
-- 模块内部采用 Simscape 标准链路：三相受控电压源 + 三相电流传感器 + PMSM + 转矩/角速度传感器 + 负载转矩源。
+`motor` 模块当前主路径是 Simscape Electrical 内置 PMSM：
 
-总装模型：
+- PMSM 块：`ee_lib/Electromechanical/Permanent Magnet/PMSM`
+- 三相电流传感器：`ee_lib/Sensors & Transducers/Current Sensor (Three-Phase)`
+- 机械转速传感器：`fl_lib/Mechanical/Mechanical Sensors/Ideal Rotational Motion Sensor`
+- 转矩传感器：`fl_lib/Mechanical/Mechanical Sensors/Ideal Torque Sensor`
 
-- all-in 模型仍默认输出到 `matlab/models/pmsm_foc_model.slx`，因此旧入口和大部分既有脚本不需要改调用名。
+这意味着仓库当前默认建模路径已经不是“MATLAB Fcn + Integrator 的自定义 dq 电机”。
 
-验证方式：
+`pmsm_motor.ssc` 仍在仓库中，但不应在文档中被描述为当前 all-in 主模型的默认电机实现。
 
-- `validate_pmsm_foc_modules` 会依次为每个模块生成独立 harness 模型，执行保存、`update diagram`、短时仿真，并在最后验证 all-in 模型。
+## all-in 模型
 
-重要参数差异：
+总装入口：`create_pmsm_foc_all_in_model.m`
 
-- 该路径默认 `inv_params.Vdc = 48`。
+默认连线关系：
 
-## 主流程 2：独立脚本仿真路径
+- `Signal In -> FOC Controller`
+- `FOC Controller -> Three Invertor`
+- `Three Invertor -> Motor`
+- `Motor -> Measure`
+- `Measure -> FOC Controller`
+- `Motor` 和 `FOC Controller` 部分输出进入 `Scope`
+
+生成目标文件：
+
+- `matlab/models/pmsm_foc_model.slx`
+
+兼容性说明：
+
+- `create_pmsm_foc_model.m` 现在只是调用 builder 的兼容包装器。
+
+## 主流程 2：独立 MATLAB 脚本仿真
 
 入口：`run_pmsm_simulation.m`
 
-行为要点：
+特点：
 
-- 不依赖 Simscape；按控制采样周期进行前向欧拉积分。
-- 速度参考支持斜坡，负载支持阶跃扰动。
-- 记录并绘制速度、电流、电压、占空比、电角度等曲线。
+- 不依赖 Simulink 或 Simscape。
+- 直接在 MATLAB 脚本里进行前向欧拉积分。
+- 速度给定为斜坡，负载为阶跃。
+- 记录速度、电流、电压、占空比、电角度等曲线。
 
-当前状态：
+当前脚本状态：
 
-- `use_cpp_controller = false`（默认使用 MATLAB 实现）。
-- C++ MEX 分支在脚本中保留占位，未直接启用（未验证/待确认）。
+- 默认 `use_cpp_controller = false`。
+- C++ MEX 控制器分支仍为预留占位，不应写成现成可直接启用的主路径。
+- 默认 `inv_params.Vdc = 24`。
 
-重要参数差异：
+## Builder 默认参数特征
 
-- 该路径默认 `inv_params.Vdc = 24`。
+来自 `pmsm_foc_builder('default_parameters')`：
+
+- `inv_params.Vdc = 48`
+- `inv_params.fsw = 20e3`
+- `ctrl_params.iq_max = 10`
+- `ctrl_params.id_max = 10`
+- `sim_params.validation_t_end = 0.02`
+- `ref_params.throttle = 0.2`
+- `ref_params.throttle_torque_max = 0.8`
+
+PI 参数会在 builder 内按电机参数自动推导。
 
 ## S-Function 接口定义
 
 文件：`matlab/s_function/sfun_foc_controller.cpp`
 
-输入端口（1 个端口，宽度 7）：
+S-Function 单端口输入宽度为 7：
 
 1. `ia`
 2. `ib`
@@ -94,22 +131,7 @@
 6. `speed_ref`
 7. `id_ref`
 
-模块化 builder（`pmsm_foc_builder.m`）当前 all-in 子系统接口额外包含：
-
-- `FOC Controller` 第 8 输入：`torque_ref`（由 `Signal In` 的 `throttle` 线性映射后提供）
-- `Signal In` 第 4 输出：`torque_ref`
-
-`torque_ref -> iq_ref` 换算关系（在 FOC 子系统内）：
-
-$$
-K_t = 1.5\,p\,(\psi_f + (L_d-L_q)i_d),\quad
-iq_{ref} = \begin{cases}
-0,& |K_t| < 10^{-6}\\
-\dfrac{T_e^{ref}}{K_t},& \text{otherwise}
-\end{cases}
-$$
-
-输出端口（1 个端口，宽度 5）：
+输出宽度为 5：
 
 1. `da`
 2. `db`
@@ -117,47 +139,69 @@ $$
 4. `id_meas`
 5. `iq_meas`
 
-对话框参数（15 个）：
+对话框参数共 15 个，覆盖采样时间、母线电压、PI 增益、电机参数和限幅。
 
-1. `Ts`
-2. `Vdc`
-3. `Kp_id`
-4. `Ki_id`
-5. `Kp_iq`
-6. `Ki_iq`
-7. `Kp_speed`
-8. `Ki_speed`
-9. `Rs`
-10. `Ld`
-11. `Lq`
-12. `flux_pm`
-13. `pole_pairs`
-14. `iq_max`
-15. `id_max`
+状态管理方式：
 
-状态管理：
+- 3 个 DWork：`integral_id`、`integral_iq`、`integral_speed`
 
-- 使用 3 个 DWork 保存积分状态：`integral_id`、`integral_iq`、`integral_speed`。
+### 与 builder 子系统接口的差异
 
-## 待确认项
+builder 里的 `FOC Controller` 子系统当前额外支持第 8 输入 `torque_ref`。
 
-- Simscape 路径与独立脚本路径在默认 `Vdc` 参数上不一致，联调时需显式统一。
-- all-in 模型当前短仿真可通过，但仍存在 1 个代数环告警，主要位于 `FOC Controller -> Three Invertor -> Motor -> Measure -> FOC Controller` 闭环；当前未阻塞构建验证，但后续若要做更稳定的数值仿真，建议引入离散控制采样或显式延时。
+也就是说：
 
-## Simscape PMSM 学习与使用
+- S-Function 原始 C++ 接口仍是 7 输入。
+- builder 总装时在子系统层增加了 `torque_ref` 到 `iq_ref` 的换算逻辑。
 
-本仓库可直接参考的本地例程路径：
+换算关系文档化如下：
+
+$$
+K_t = 1.5\,p\,(\psi_f + (L_d-L_q)i_d)
+$$
+
+$$
+iq_{ref} =
+\begin{cases}
+0, & |K_t| < 10^{-6} \\
+T_e^{ref} / K_t, & \text{otherwise}
+\end{cases}
+$$
+
+## 验证方式
+
+### 统一验证
+
+- `validate_pmsm_foc_modules(false)`：只验证 6 个模块。
+- `validate_pmsm_foc_modules(true)`：模块 + all-in 一起验证。
+
+验证动作包括：
+
+- 保存模型
+- `update diagram`
+- 短时仿真
+
+### 电机专项验证
+
+- `test_simscape_motor_module`
+
+会额外断言：
+
+- 电机模块确实包含 Simscape PMSM 与关键传感器。
+- standalone motor 模块的 `omega_m` 在短时仿真中不是恒零。
+
+## 已知差异与风险
+
+- 独立脚本仿真和 builder 默认 `Vdc` 不一致。
+- all-in 闭环仍可能存在代数环告警，当前不应写成“完全无告警”。
+- 若要提高数值稳定性，后续仍可能需要进一步显式离散化控制链或增加延时环节。
+
+## 可参考的模型
 
 - `matlab/models/PMSMDrive_with_our_controller.slx`
 - `matlab/models/pmsm_blue_plant_wrapper.slx`
 
-推荐按以下顺序推进：
-
-1. 学习模型：从 `PMSMDrive_with_our_controller.slx` 对照查看 PMSM 块参数字段（`nPolePairs`、`pm_flux_linkage`、`Ld`、`Lq`、`Rs`、`J`、`lam`）与电机侧传感器接线。
-2. 使用模型：运行 `create_motor_module` 或 `create_pmsm_foc_all_in_model`，由 builder 自动生成采用 Simscape PMSM 的 motor 子系统。
-3. 模块验证：运行 `validate_pmsm_foc_modules(false)`，确认每个模块保存、编译、短时仿真通过。
-4. 总装验证：运行 `validate_pmsm_foc_modules(true)`，确认 all-in 模型中 `Motor` 子系统包含 Simscape PMSM 并可短时仿真。
-5. 补充测试：运行 `matlab/tests/test_simscape_motor_module.m`，执行 motor 单模块和 all-in 的结构断言（含 PMSM 块存在性）与 smoke simulation。
+这些文件更适合作为 Simscape PMSM 接线、参数字段和 plant 包装方式的对照样例。
 
 ## 关联文档
 

@@ -1,14 +1,13 @@
 # 项目总览
 
-本文是项目文档入口，内容基于当前仓库代码状态（2026-03-31）同步。
+本文是当前项目文档入口，已按仓库代码状态同步到 2026-04-07。
 
-## 项目大纲
+## 这次同步的主结论
 
-1. 控制算法核心
-2. 仿真与模型体系
-3. Python 与 ROS2 集成
-4. 构建与验证流程
-5. 仓库结构速览
+- Simulink 主建模路径已经稳定为模块化 builder：先建 `signal_in`、`foc_controller`、`three_invertor`、`motor`、`measure`、`scope`，再总装 all-in 模型。
+- `motor` 模块当前主实现是 Simscape Electrical 内置 PMSM 块与配套传感器链路。
+- C++ 控制核心提供无状态函数接口和有状态类接口，两者都使用基于电机参数的 PI 自动整定逻辑。
+- Python / ROS2 层当前实际实现仍以 `std_msgs` 为主，代码注释中的自定义消息描述不应视为现状。
 
 ## 文档导航
 
@@ -18,20 +17,34 @@
 - 构建与验证流程：./theme_build_and_validation.md
 - 仓库结构速览：./theme_repository_map.md
 
-## 当前代码主干结论
-
-- C++ 核心提供两种 FOC 接口：无状态函数接口与有状态类接口。
-- MATLAB 路径同时支持独立脚本仿真与 Simscape/Simulink 模型流程。
-- Python 层对 C++ 绑定提供导入失败时的纯 Python 回退实现。
-- ROS2 目前使用 `std_msgs/Float64` 与 `std_msgs/Float64MultiArray` 进行消息交互。
-
-## 验证状态说明
-
-- 文档中的接口、参数、话题、命令来自源码静态核对。
-- 本次未执行完整构建/仿真/ROS2 运行链路，运行结果相关内容统一视为“未验证/待确认”。
-
 ## 推荐阅读路径
 
-- 算法实现优先：先看“控制算法核心”，再看“构建与验证流程”。
-- 仿真建模优先：先看“仿真与模型体系”，再看“控制算法核心”。
-- 系统联调优先：先看“Python 与 ROS2 集成”，再看“构建与验证流程”。
+### 想看控制算法
+
+1. `theme_control_core.md`
+2. `theme_build_and_validation.md`
+3. `theme_simscape_simulation.md`
+
+### 想看 Simulink / Simscape
+
+1. `theme_simscape_simulation.md`
+2. `theme_repository_map.md`
+3. `theme_build_and_validation.md`
+
+### 想看 Python / ROS2 联调
+
+1. `theme_python_ros2_integration.md`
+2. `theme_build_and_validation.md`
+3. `theme_control_core.md`
+
+## 阅读前需要知道的差异
+
+- 独立 MATLAB 脚本仿真默认 `Vdc = 24`。
+- Simulink builder 默认 `Vdc = 48`。
+- `create_pmsm_foc_model.m` 现在主要是兼容性包装器，实际总装逻辑在 `pmsm_foc_builder.m` 与 `create_pmsm_foc_all_in_model.m`。
+
+## 验证口径
+
+- 本轮文档更新基于源码静态核对。
+- 文档里提到的验证入口、测试文件和命令都来自仓库实际文件。
+- 本轮未重新执行完整 MATLAB 仿真、ROS2 联调或全量构建，因此运行结果类结论仍应以实际环境复验为准。
