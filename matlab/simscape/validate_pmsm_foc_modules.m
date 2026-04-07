@@ -7,6 +7,7 @@ end
 
 module_specs = {
     'signal_in', 'pmsm_module_signal_in';
+    'thro', 'pmsm_module_thro';
     'foc_controller', 'pmsm_module_foc_controller';
     'three_invertor', 'pmsm_module_three_invertor';
     'motor', 'pmsm_module_motor';

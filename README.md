@@ -113,7 +113,7 @@ test_simscape_motor_module
 说明：
 
 - `pmsm_foc_simscape` 会重新生成 `matlab/models/pmsm_foc_model.slx`。
-- 若检测到 `matlab/s_function/sfun_foc_controller.cpp`，会尝试自动编译 S-Function MEX。
+- 该入口会强制编译 `matlab/s_function/sfun_foc_controller.cpp` 对应的 MEX，因为 `FOC Controller` 已通过 C++ S-Function 接入。
 - builder 默认母线电压 `Vdc = 48 V`，与独立脚本仿真不同，联调时应显式统一参数。
 
 ### 5. Python 绑定与 ROS2

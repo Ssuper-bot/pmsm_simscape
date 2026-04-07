@@ -56,6 +56,9 @@ struct FOCConfig {
  */
 FOCConfig derive_pi_gains_from_motor(const FOCConfig& config);
 
+/** Convert torque reference to q-axis current reference. */
+double torque_to_iq_ref(double torque_ref, double id_ref, const FOCConfig& config);
+
 /** FOC controller output */
 struct FOCOutput {
     double duty_a;
@@ -79,6 +82,7 @@ struct FOCOutput {
  * @param omega_m         Mechanical speed [rad/s]
  * @param speed_ref       Speed reference [rad/s]
  * @param id_ref          d-axis current reference [A]
+ * @param torque_ref      Torque reference [N*m]
  * @param integral_id     d-axis PI integrator state (in/out)
  * @param integral_iq     q-axis PI integrator state (in/out)
  * @param integral_speed  Speed PI integrator state (in/out)
@@ -88,7 +92,7 @@ struct FOCOutput {
 FOCOutput foc_controller_step(
     double ia, double ib, double ic,
     double theta_e, double omega_m,
-    double speed_ref, double id_ref,
+    double speed_ref, double id_ref, double torque_ref,
     double& integral_id, double& integral_iq, double& integral_speed,
     const FOCConfig& config
 );
@@ -110,7 +114,7 @@ public:
     /** Execute one FOC control step */
     FOCOutput step(double ia, double ib, double ic,
                    double theta_e, double omega_m,
-                   double speed_ref, double id_ref);
+                   double speed_ref, double id_ref, double torque_ref = 0.0);
 
     /** Reset all controller states */
     void reset();

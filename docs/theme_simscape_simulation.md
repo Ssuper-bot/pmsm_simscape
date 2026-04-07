@@ -31,6 +31,7 @@
 ### 模块入口
 
 - `create_signal_in_module.m`
+- `create_thro_module.m`
 - `create_foc_controller_module.m`
 - `create_three_invertor_module.m`
 - `create_motor_module.m`
@@ -40,9 +41,11 @@
 ### 模块职责
 
 - `signal_in`
-	生成 `speed_ref`、`id_ref`、`load_torque`，以及由 `throttle` 计算得到的 `torque_ref`。
+	生成 `speed_ref`、`id_ref`、`load_torque`、`throttle`。
+- `thro`
+	根据当前速度、目标速度和油门开度生成 `torque_ref`。
 - `foc_controller`
-	实现 Clarke / Park / PI / inverse Park / SVPWM 控制链，并把 `torque_ref` 在线换算为 `iq_ref`。
+	现在是一个薄封装子系统：把测量量和参考量打包后送入 `sfun_foc_controller`，Clarke / Park / PI / inverse Park / SVPWM 与 `torque_ref -> iq_ref` 全部在 C++ 中实现。
 - `three_invertor`
 	生成三相平均电压输出。
 - `motor`
@@ -72,6 +75,9 @@
 默认连线关系：
 
 - `Signal In -> FOC Controller`
+- `Signal In -> Thro`
+- `Measure -> Thro`
+- `Thro -> FOC Controller`
 - `FOC Controller -> Three Invertor`
 - `Three Invertor -> Motor`
 - `Motor -> Measure`
@@ -113,6 +119,7 @@
 - `ctrl_params.id_max = 10`
 - `sim_params.validation_t_end = 0.02`
 - `ref_params.throttle = 0.2`
+- `ref_params.throttle_speed_kp = 0.05`
 - `ref_params.throttle_torque_max = 0.8`
 
 PI 参数会在 builder 内按电机参数自动推导。
@@ -121,15 +128,16 @@ PI 参数会在 builder 内按电机参数自动推导。
 
 文件：`matlab/s_function/sfun_foc_controller.cpp`
 
-S-Function 单端口输入宽度为 7：
+S-Function 单端口输入宽度为 8：
 
 1. `ia`
 2. `ib`
 3. `ic`
 4. `theta_e`
 5. `omega_m`
-6. `speed_ref`
+6. `speed_ref`（RPM）
 7. `id_ref`
+8. `torque_ref`
 
 输出宽度为 5：
 
@@ -139,22 +147,13 @@ S-Function 单端口输入宽度为 7：
 4. `id_meas`
 5. `iq_meas`
 
-对话框参数共 15 个，覆盖采样时间、母线电压、PI 增益、电机参数和限幅。
+对话框参数共 13 个，覆盖采样时间、母线电压、带宽、电机参数和限幅。
 
 状态管理方式：
 
 - 3 个 DWork：`integral_id`、`integral_iq`、`integral_speed`
 
-### 与 builder 子系统接口的差异
-
-builder 里的 `FOC Controller` 子系统当前额外支持第 8 输入 `torque_ref`。
-
-也就是说：
-
-- S-Function 原始 C++ 接口仍是 7 输入。
-- builder 总装时在子系统层增加了 `torque_ref` 到 `iq_ref` 的换算逻辑。
-
-换算关系文档化如下：
+builder 当前不再在子系统层保留 MATLAB Fcn、PID block 或 `torque_ref -> iq_ref` 的本地实现；上述换算直接在 C++ 控制核心内完成。换算关系文档化如下：
 
 $$
 K_t = 1.5\,p\,(\psi_f + (L_d-L_q)i_d)
@@ -172,7 +171,7 @@ $$
 
 ### 统一验证
 
-- `validate_pmsm_foc_modules(false)`：只验证 6 个模块。
+- `validate_pmsm_foc_modules(false)`：只验证 7 个模块。
 - `validate_pmsm_foc_modules(true)`：模块 + all-in 一起验证。
 
 验证动作包括：

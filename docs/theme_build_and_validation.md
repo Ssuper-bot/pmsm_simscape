@@ -117,13 +117,14 @@ cmake --build .
 
 1. 拉起默认参数。
 2. 将参数注入 base workspace。
-3. 若检测到 S-Function 源，则尝试编译 MEX。
+3. 强制编译 `sfun_foc_controller` MEX，因为 all-in 模型的 FOC 子系统已改为依赖该 C++ S-Function。
 4. 删除旧的 `matlab/models/pmsm_foc_model.slx`。
 5. 调用 `create_pmsm_foc_all_in_model` 重新生成 all-in 模型。
 
 ### 模块化 builder 入口
 
 - `matlab/simscape/create_signal_in_module.m`
+- `matlab/simscape/create_thro_module.m`
 - `matlab/simscape/create_foc_controller_module.m`
 - `matlab/simscape/create_three_invertor_module.m`
 - `matlab/simscape/create_motor_module.m`
@@ -141,7 +142,7 @@ cmake --build .
 
 当前行为：
 
-- 依次生成 6 个模块 harness。
+- 依次生成 7 个模块 harness。
 - 对每个模块执行保存、`update diagram`、短时仿真。
 - `motor` 模块会额外断言包含 Simscape Electrical PMSM 块。
 - 可选在最后验证 all-in `pmsm_foc_model`。

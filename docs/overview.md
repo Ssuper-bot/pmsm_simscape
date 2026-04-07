@@ -4,7 +4,7 @@
 
 ## 这次同步的主结论
 
-- Simulink 主建模路径已经稳定为模块化 builder：先建 `signal_in`、`foc_controller`、`three_invertor`、`motor`、`measure`、`scope`，再总装 all-in 模型。
+- Simulink 主建模路径已经稳定为模块化 builder：先建 `signal_in`、`thro`、`foc_controller`、`three_invertor`、`motor`、`measure`、`scope`，再总装 all-in 模型。
 - `motor` 模块当前主实现是 Simscape Electrical 内置 PMSM 块与配套传感器链路。
 - C++ 控制核心提供无状态函数接口和有状态类接口，两者都使用基于电机参数的 PI 自动整定逻辑。
 - Python / ROS2 层当前实际实现仍以 `std_msgs` 为主，代码注释中的自定义消息描述不应视为现状。

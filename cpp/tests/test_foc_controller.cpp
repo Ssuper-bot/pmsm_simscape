@@ -80,7 +80,7 @@ void test_foc_controller_step() {
 
     // Zero inputs, zero reference
     auto output = pmsm::foc_controller_step(
-        0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0,
         int_id, int_iq, int_speed, config);
 
     assert(output.duty_a >= 0.0 && output.duty_a <= 1.0);
@@ -98,10 +98,23 @@ void test_foc_controller_class() {
 
     // Run several steps with speed reference
     for (int i = 0; i < 100; i++) {
-        auto out = ctrl.step(0, 0, 0, 0, 0, 100.0, 0);
+        auto out = ctrl.step(0, 0, 0, 0, 0, 100.0, 0, 0.0);
         assert(out.duty_a >= 0.0 && out.duty_a <= 1.0);
     }
     printf("  FOC Controller Class: PASS\n");
+}
+
+void test_torque_to_iq_reference() {
+    pmsm::FOCConfig config;
+    config.flux_pm = 0.0577;
+    config.Ld = 1.4e-3;
+    config.Lq = 1.4e-3;
+    config.pole_pairs = 4;
+
+    const double iq_ref = pmsm::torque_to_iq_ref(0.12, 0.0, config);
+    const double expected = 0.12 / (1.5 * config.pole_pairs * config.flux_pm);
+    assert(approx_eq(iq_ref, expected, 1e-12));
+    printf("  Torque-to-iq conversion: PASS\n");
 }
 
 void test_motor_based_pi_derivation() {
@@ -142,6 +155,7 @@ int main() {
     test_foc_controller_step();
     test_foc_controller_class();
     test_motor_based_pi_derivation();
+    test_torque_to_iq_reference();
     printf("All tests PASSED.\n");
     return 0;
 }

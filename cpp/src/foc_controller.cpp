@@ -46,12 +46,22 @@ FOCConfig derive_pi_gains_from_motor(const FOCConfig& config) {
     return tuned;
 }
 
+double torque_to_iq_ref(double torque_ref, double id_ref, const FOCConfig& config) {
+    const double torque_constant = 1.5 * std::max(config.pole_pairs, 1) *
+        (config.flux_pm + (config.Ld - config.Lq) * id_ref);
+    if (std::fabs(torque_constant) < 1e-6) {
+        return 0.0;
+    }
+
+    return torque_ref / torque_constant;
+}
+
 // ===================== Stateless Step Function =====================
 
 FOCOutput foc_controller_step(
     double ia, double ib, double ic,
     double theta_e, double omega_m,
-    double speed_ref, double id_ref,
+    double speed_ref, double id_ref, double torque_ref,
     double& integral_id, double& integral_iq, double& integral_speed,
     const FOCConfig& config)
 {
@@ -67,14 +77,17 @@ FOCOutput foc_controller_step(
     // --- Speed PI controller ---
     double speed_error = speed_ref - omega_m;
     integral_speed += speed_error * dt;
-    double iq_ref = tuned.Kp_speed * speed_error + tuned.Ki_speed * integral_speed;
-    iq_ref = std::clamp(iq_ref, -tuned.iq_max, tuned.iq_max);
+    double speed_iq_ref = tuned.Kp_speed * speed_error + tuned.Ki_speed * integral_speed;
+    speed_iq_ref = std::clamp(speed_iq_ref, -tuned.iq_max, tuned.iq_max);
 
     // Anti-windup for speed loop
     double iq_ref_unsat = tuned.Kp_speed * speed_error + tuned.Ki_speed * integral_speed;
-    if (iq_ref != iq_ref_unsat) {
-        integral_speed = (iq_ref - tuned.Kp_speed * speed_error) / std::max(tuned.Ki_speed, 1e-12);
+    if (speed_iq_ref != iq_ref_unsat) {
+        integral_speed = (speed_iq_ref - tuned.Kp_speed * speed_error) / std::max(tuned.Ki_speed, 1e-12);
     }
+
+    const double torque_iq_ref = torque_to_iq_ref(torque_ref, id_ref, tuned);
+    const double iq_ref = std::clamp(speed_iq_ref + torque_iq_ref, -tuned.iq_max, tuned.iq_max);
 
     // --- d-axis current PI controller ---
     double id_error = id_ref - dq.d;
@@ -153,7 +166,7 @@ void FOCController::configure(const FOCConfig& config) {
 
 FOCOutput FOCController::step(double ia, double ib, double ic,
                                double theta_e, double omega_m,
-                               double speed_ref, double id_ref) {
+                               double speed_ref, double id_ref, double torque_ref) {
     double dt = config_.Ts;
 
     // Clarke transform
@@ -164,7 +177,9 @@ FOCOutput FOCController::step(double ia, double ib, double ic,
 
     // Speed PI controller
     double speed_error = speed_ref - omega_m;
-    double iq_ref = pi_speed_.step(speed_error, dt);
+    const double speed_iq_ref = pi_speed_.step(speed_error, dt);
+    const double torque_iq_ref = torque_to_iq_ref(torque_ref, id_ref, config_);
+    const double iq_ref = std::clamp(speed_iq_ref + torque_iq_ref, -config_.iq_max, config_.iq_max);
 
     // Current PI controllers
     double id_error = id_ref - dq.d;

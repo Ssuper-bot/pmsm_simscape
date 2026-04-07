@@ -90,7 +90,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
 
     // Run one step
     pmsm::FOCOutput output = g_controller.step(
-        ia, ib, ic, theta_e, omega_m, speed_ref, id_ref);
+        ia, ib, ic, theta_e, omega_m, speed_ref, id_ref, 0.0);
 
     // Return output as 1x8 vector
     plhs[0] = mxCreateDoubleMatrix(1, 8, mxREAL);

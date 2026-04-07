@@ -125,6 +125,7 @@ ref_params.load_torque = 0.1;
 ref_params.load_step_time = 0.3;
 ref_params.id_ref = 0;
 ref_params.throttle = 0.2;
+ref_params.throttle_speed_kp = 0.05;
 ref_params.throttle_torque_max = 0.8;
 
 ctrl_params = derive_pi_ctrl_params(ctrl_params, motor_params, inv_params);
@@ -144,12 +145,28 @@ switch char(module_name)
         add_scope_block([model_name '/Speed Ref Scope'], [430 80 500 120]);
         add_scope_block([model_name '/Id Ref Scope'], [430 145 500 185]);
         add_scope_block([model_name '/Load Scope'], [430 210 500 250]);
-        add_scope_block([model_name '/Torque Ref Scope'], [430 275 520 315]);
+        add_scope_block([model_name '/Throttle Scope'], [430 275 520 315]);
 
         add_line(model_name, 'Signal In/1', 'Speed Ref Scope/1', 'autorouting', 'smart');
         add_line(model_name, 'Signal In/2', 'Id Ref Scope/1', 'autorouting', 'smart');
         add_line(model_name, 'Signal In/3', 'Load Scope/1', 'autorouting', 'smart');
-        add_line(model_name, 'Signal In/4', 'Torque Ref Scope/1', 'autorouting', 'smart');
+        add_line(model_name, 'Signal In/4', 'Throttle Scope/1', 'autorouting', 'smart');
+
+    case 'thro'
+        add_block('built-in/Subsystem', [model_name '/Thro']);
+        create_thro_subsystem([model_name '/Thro'], ref_params);
+        set_param([model_name '/Thro'], 'Position', [250 110 500 310]);
+
+        add_constant_source(model_name, 'CurrentSpeed', '0.0', [40 120 105 140]);
+        add_step_source(model_name, 'TargetSpeed', '0.001', '0', num2str(ref_params.speed_ref), [25 175 105 205]);
+        add_constant_source(model_name, 'Throttle', num2str(ref_params.throttle), [40 235 105 255]);
+
+        add_scope_block([model_name '/Torque Ref Scope'], [590 175 680 215]);
+
+        add_line(model_name, 'CurrentSpeed/1', 'Thro/1', 'autorouting', 'smart');
+        add_line(model_name, 'TargetSpeed/1', 'Thro/2', 'autorouting', 'smart');
+        add_line(model_name, 'Throttle/1', 'Thro/3', 'autorouting', 'smart');
+        add_line(model_name, 'Thro/1', 'Torque Ref Scope/1', 'autorouting', 'smart');
 
     case 'foc_controller'
         add_block('built-in/Subsystem', [model_name '/FOC Controller']);
@@ -274,6 +291,10 @@ add_block('built-in/Subsystem', [model_name '/Signal In']);
 create_signal_in_subsystem([model_name '/Signal In'], ref_params);
 set_param([model_name '/Signal In'], 'Position', [60 90 240 250]);
 
+add_block('built-in/Subsystem', [model_name '/Thro']);
+create_thro_subsystem([model_name '/Thro'], ref_params);
+set_param([model_name '/Thro'], 'Position', [300 430 560 620]);
+
 add_block('built-in/Subsystem', [model_name '/FOC Controller']);
 create_foc_controller_subsystem([model_name '/FOC Controller'], ctrl_params, inv_params, motor_params);
 set_param([model_name '/FOC Controller'], 'Position', [300 80 560 390]);
@@ -297,7 +318,9 @@ set_param([model_name '/Scope'], 'Position', [1270 150 1470 360]);
 add_line(model_name, 'Signal In/1', 'FOC Controller/6', 'autorouting', 'smart');
 add_line(model_name, 'Signal In/2', 'FOC Controller/7', 'autorouting', 'smart');
 add_line(model_name, 'Signal In/3', 'Motor/4', 'autorouting', 'smart');
-add_line(model_name, 'Signal In/4', 'FOC Controller/8', 'autorouting', 'smart');
+add_line(model_name, 'Signal In/1', 'Thro/2', 'autorouting', 'smart');
+add_line(model_name, 'Signal In/4', 'Thro/3', 'autorouting', 'smart');
+add_line(model_name, 'Thro/1', 'FOC Controller/8', 'autorouting', 'smart');
 
 add_line(model_name, 'FOC Controller/1', 'Three Invertor/1', 'autorouting', 'smart');
 
@@ -316,6 +339,7 @@ add_line(model_name, 'Measure/2', 'FOC Controller/2', 'autorouting', 'smart');
 add_line(model_name, 'Measure/3', 'FOC Controller/3', 'autorouting', 'smart');
 add_line(model_name, 'Measure/4', 'FOC Controller/4', 'autorouting', 'smart');
 add_line(model_name, 'Measure/5', 'FOC Controller/5', 'autorouting', 'smart');
+add_line(model_name, 'Measure/5', 'Thro/1', 'autorouting', 'smart');
 
 add_line(model_name, 'Motor/4', 'Scope/1', 'autorouting', 'smart');
 add_line(model_name, 'FOC Controller/2', 'Scope/2', 'autorouting', 'smart');
@@ -509,135 +533,56 @@ add_block('built-in/Outport', [subsys '/duty_abc'], 'Port', '1');
 add_block('built-in/Outport', [subsys '/id_meas'], 'Port', '2');
 add_block('built-in/Outport', [subsys '/iq_meas'], 'Port', '3');
 
-add_block('simulink/Signal Routing/Mux', [subsys '/Mux_abc'], ...
-    'Inputs', '3', 'Position', [120 60 125 140]);
-add_block('simulink/User-Defined Functions/MATLAB Fcn', [subsys '/Clarke'], ...
-    'MATLABFcn', '[2/3*(u(1)-0.5*u(2)-0.5*u(3)); 2/3*(sqrt(3)/2*u(2)-sqrt(3)/2*u(3))]', ...
-    'Position', [170 80 290 120]);
-add_block('simulink/Signal Routing/Demux', [subsys '/Demux_ab'], ...
-    'Outputs', '2', 'Position', [320 80 325 120]);
+if isfield(inv_params, 'Tsw') && ~isempty(inv_params.Tsw)
+    Ts_control = inv_params.Tsw;
+else
+    Ts_control = 1 / inv_params.fsw;
+end
 
-add_line(subsys, 'ia/1', 'Mux_abc/1');
-add_line(subsys, 'ib/1', 'Mux_abc/2');
-add_line(subsys, 'ic/1', 'Mux_abc/3');
-add_line(subsys, 'Mux_abc/1', 'Clarke/1');
-add_line(subsys, 'Clarke/1', 'Demux_ab/1');
+sfun_params = strjoin({ ...
+    num2str(Ts_control, '%.16g'), ...
+    num2str(inv_params.Vdc, '%.16g'), ...
+    num2str(ctrl_params.omega_ci, '%.16g'), ...
+    num2str(ctrl_params.omega_cs, '%.16g'), ...
+    num2str(motor_params.Rs, '%.16g'), ...
+    num2str(motor_params.Ld, '%.16g'), ...
+    num2str(motor_params.Lq, '%.16g'), ...
+    num2str(motor_params.flux_pm, '%.16g'), ...
+    num2str(motor_params.p, '%.16g'), ...
+    num2str(motor_params.J, '%.16g'), ...
+    num2str(motor_params.B, '%.16g'), ...
+    num2str(ctrl_params.iq_max, '%.16g'), ...
+    num2str(ctrl_params.id_max, '%.16g') ...
+}, ', ');
 
-add_block('simulink/Signal Routing/Mux', [subsys '/Mux_park'], ...
-    'Inputs', '3', 'Position', [370 70 375 150]);
-add_block('simulink/User-Defined Functions/MATLAB Fcn', [subsys '/Park'], ...
-    'MATLABFcn', '[u(1)*cos(u(3))+u(2)*sin(u(3)); -u(1)*sin(u(3))+u(2)*cos(u(3))]', ...
-    'Position', [410 90 530 130]);
-add_block('simulink/Signal Routing/Demux', [subsys '/Demux_dq'], ...
-    'Outputs', '2', 'Position', [560 90 565 130]);
+add_block('simulink/Signal Routing/Mux', [subsys '/Mux_inputs'], ...
+    'Inputs', '8', 'Position', [135 68 140 252]);
+add_block('simulink/User-Defined Functions/S-Function', [subsys '/FOC Core'], ...
+    'FunctionName', 'sfun_foc_controller', ...
+    'Parameters', sfun_params, ...
+    'Position', [205 120 360 200]);
+add_block('simulink/Signal Routing/Demux', [subsys '/Demux_outputs'], ...
+    'Outputs', '5', 'Position', [410 118 415 202]);
+add_block('simulink/Signal Routing/Mux', [subsys '/Mux_duty'], ...
+    'Inputs', '3', 'Position', [455 70 460 150]);
 
-add_line(subsys, 'Demux_ab/1', 'Mux_park/1');
-add_line(subsys, 'Demux_ab/2', 'Mux_park/2');
-add_line(subsys, 'theta_e/1', 'Mux_park/3');
-add_line(subsys, 'Mux_park/1', 'Park/1');
-add_line(subsys, 'Park/1', 'Demux_dq/1');
-add_line(subsys, 'Demux_dq/1', 'id_meas/1');
-add_line(subsys, 'Demux_dq/2', 'iq_meas/1');
+add_line(subsys, 'ia/1', 'Mux_inputs/1');
+add_line(subsys, 'ib/1', 'Mux_inputs/2');
+add_line(subsys, 'ic/1', 'Mux_inputs/3');
+add_line(subsys, 'theta_e/1', 'Mux_inputs/4');
+add_line(subsys, 'omega_m/1', 'Mux_inputs/5');
+add_line(subsys, 'speed_ref/1', 'Mux_inputs/6');
+add_line(subsys, 'id_ref/1', 'Mux_inputs/7');
+add_line(subsys, 'torque_ref/1', 'Mux_inputs/8');
 
-add_block('simulink/Math Operations/Gain', [subsys '/RPM2RadS'], ...
-    'Gain', '2*pi/60', ...
-    'Position', [80 200 120 220]);
-add_block('simulink/Math Operations/Sum', [subsys '/Speed Error'], ...
-    'Inputs', '+-', 'Position', [160 200 190 230]);
-add_block('simulink/Continuous/PID Controller', [subsys '/Speed PI'], ...
-    'Controller', 'PI', ...
-    'P', num2str(ctrl_params.Kp_speed), ...
-    'I', num2str(ctrl_params.Ki_speed), ...
-    'Position', [230 200 310 240]);
-add_block('simulink/Discontinuities/Saturation', [subsys '/Iq Sat'], ...
-    'UpperLimit', num2str(ctrl_params.iq_max), ...
-    'LowerLimit', num2str(-ctrl_params.iq_max), ...
-    'Position', [350 200 400 240]);
-
-add_line(subsys, 'speed_ref/1', 'RPM2RadS/1');
-add_line(subsys, 'RPM2RadS/1', 'Speed Error/1');
-add_line(subsys, 'omega_m/1', 'Speed Error/2');
-add_line(subsys, 'Speed Error/1', 'Speed PI/1');
-add_line(subsys, 'Speed PI/1', 'Iq Sat/1');
-
-add_block('simulink/Math Operations/Sum', [subsys '/Id Error'], ...
-    'Inputs', '+-', 'Position', [600 160 630 190]);
-add_block('simulink/Continuous/PID Controller', [subsys '/Id PI'], ...
-    'Controller', 'PI', ...
-    'P', num2str(ctrl_params.Kp_id), ...
-    'I', num2str(ctrl_params.Ki_id), ...
-    'Position', [670 160 750 200]);
-
-add_line(subsys, 'id_ref/1', 'Id Error/1');
-add_line(subsys, 'Demux_dq/1', 'Id Error/2');
-add_line(subsys, 'Id Error/1', 'Id PI/1');
-
-add_block('simulink/Math Operations/Sum', [subsys '/Iq Error'], ...
-    'Inputs', '+-', 'Position', [600 250 630 280]);
-add_block('simulink/Continuous/PID Controller', [subsys '/Iq PI'], ...
-    'Controller', 'PI', ...
-    'P', num2str(ctrl_params.Kp_iq), ...
-    'I', num2str(ctrl_params.Ki_iq), ...
-    'Position', [670 250 750 290]);
-
-pp_s = num2str(motor_params.p, '%.6g');
-fp_s = num2str(motor_params.flux_pm, '%.6g');
-Ld_s = num2str(motor_params.Ld, '%.6g');
-Lq_s = num2str(motor_params.Lq, '%.6g');
-torque_to_iq_fcn = [ ...
-    '(abs(1.5*' pp_s '*(' fp_s '+(' Ld_s '-' Lq_s ')*u(1)))<1e-6) * 0 + ' ...
-    '(abs(1.5*' pp_s '*(' fp_s '+(' Ld_s '-' Lq_s ')*u(1)))>=1e-6) * ' ...
-    '(u(2)/(1.5*' pp_s '*(' fp_s '+(' Ld_s '-' Lq_s ')*u(1))))'];
-add_block('simulink/Signal Routing/Mux', [subsys '/Mux_torque2iq'], ...
-    'Inputs', '2', 'Position', [520 320 525 380]);
-add_block('simulink/User-Defined Functions/MATLAB Fcn', [subsys '/Torque2Iq'], ...
-    'MATLABFcn', torque_to_iq_fcn, ...
-    'Position', [560 330 700 370]);
-add_block('simulink/Math Operations/Sum', [subsys '/Iq Ref Sum'], ...
-    'Inputs', '++', 'Position', [740 280 770 310]);
-add_block('simulink/Discontinuities/Saturation', [subsys '/Iq Ref Sat'], ...
-    'UpperLimit', num2str(ctrl_params.iq_max), ...
-    'LowerLimit', num2str(-ctrl_params.iq_max), ...
-    'Position', [800 280 855 310]);
-
-add_line(subsys, 'id_ref/1', 'Mux_torque2iq/1');
-add_line(subsys, 'torque_ref/1', 'Mux_torque2iq/2');
-add_line(subsys, 'Mux_torque2iq/1', 'Torque2Iq/1');
-add_line(subsys, 'Iq Sat/1', 'Iq Ref Sum/1');
-add_line(subsys, 'Torque2Iq/1', 'Iq Ref Sum/2');
-add_line(subsys, 'Iq Ref Sum/1', 'Iq Ref Sat/1');
-add_line(subsys, 'Iq Ref Sat/1', 'Iq Error/1');
-add_line(subsys, 'Demux_dq/2', 'Iq Error/2');
-add_line(subsys, 'Iq Error/1', 'Iq PI/1');
-
-add_block('simulink/Signal Routing/Mux', [subsys '/Mux_invpark'], ...
-    'Inputs', '3', 'Position', [800 180 805 280]);
-add_block('simulink/User-Defined Functions/MATLAB Fcn', [subsys '/InvPark'], ...
-    'MATLABFcn', '[u(1)*cos(u(3))-u(2)*sin(u(3)); u(1)*sin(u(3))+u(2)*cos(u(3))]', ...
-    'Position', [840 210 960 250]);
-add_block('simulink/Signal Routing/Demux', [subsys '/Demux_vab'], ...
-    'Outputs', '2', 'Position', [990 210 995 250]);
-
-add_line(subsys, 'Id PI/1', 'Mux_invpark/1');
-add_line(subsys, 'Iq PI/1', 'Mux_invpark/2');
-add_line(subsys, 'theta_e/1', 'Mux_invpark/3');
-add_line(subsys, 'Mux_invpark/1', 'InvPark/1');
-add_line(subsys, 'InvPark/1', 'Demux_vab/1');
-
-add_block('simulink/Signal Routing/Mux', [subsys '/Mux_svpwm'], ...
-    'Inputs', '3', 'Position', [1030 200 1035 270]);
-add_block('built-in/Constant', [subsys '/Vdc_const'], ...
-    'Value', num2str(inv_params.Vdc), ...
-    'Position', [980 270 1020 290]);
-add_block('simulink/User-Defined Functions/MATLAB Fcn', [subsys '/SVPWM'], ...
-    'MATLABFcn', 'svpwm_inline(u(1), u(2), u(3))', ...
-    'Position', [1070 210 1180 250]);
-
-add_line(subsys, 'Demux_vab/1', 'Mux_svpwm/1');
-add_line(subsys, 'Demux_vab/2', 'Mux_svpwm/2');
-add_line(subsys, 'Vdc_const/1', 'Mux_svpwm/3');
-add_line(subsys, 'Mux_svpwm/1', 'SVPWM/1');
-add_line(subsys, 'SVPWM/1', 'duty_abc/1');
+add_line(subsys, 'Mux_inputs/1', 'FOC Core/1');
+add_line(subsys, 'FOC Core/1', 'Demux_outputs/1');
+add_line(subsys, 'Demux_outputs/1', 'Mux_duty/1');
+add_line(subsys, 'Demux_outputs/2', 'Mux_duty/2');
+add_line(subsys, 'Demux_outputs/3', 'Mux_duty/3');
+add_line(subsys, 'Mux_duty/1', 'duty_abc/1');
+add_line(subsys, 'Demux_outputs/4', 'id_meas/1');
+add_line(subsys, 'Demux_outputs/5', 'iq_meas/1');
 end
 
 function create_pmsm_subsystem(subsys, motor_params)
@@ -675,10 +620,18 @@ add_reference_block_with_fallback([subsys '/Electrical Reference'], {
 add_reference_block_with_fallback([subsys '/Mechanical Reference'], {
     'fl_lib/Mechanical/Rotational Elements/Mechanical Rotational Reference'
 }, [530 310 590 340]);
-add_reference_block_with_fallback([subsys '/Sensor Inertia'], {
+add_reference_block_with_fallback([subsys '/Rotor Inertia'], {
     'fl_lib/Mechanical/Rotational Elements/Inertia'
 }, [640 285 700 335]);
-set_block_params_safe([subsys '/Sensor Inertia'], struct('inertia', '1e-9'));
+set_block_params_safe([subsys '/Rotor Inertia'], struct('inertia', '1e-9'));
+add_reference_block_with_fallback([subsys '/Rotational Friction'], {
+    'fl_lib/Mechanical/Rotational Elements/Rotational Friction'
+}, [640 185 715 245]);
+set_block_params_safe([subsys '/Rotational Friction'], struct( ...
+    'visc_coef', num2str(motor_params.B, '%.6g'), ...
+    'visc_coef_unit', 'N*m/(rad/s)', ...
+    'brkwy_trq', '1e-9', ...
+    'Col_trq', '1e-9'));
 
 add_reference_block_with_fallback([subsys '/ThreePhase Controlled Voltage'], {
     'ee_lib/Sources/Controlled Voltage Source (Three-Phase)', ...
@@ -760,6 +713,7 @@ ph_pmsm = get_param([subsys '/PMSM'], 'PortHandles');
 ph_tsens = get_param([subsys '/Ideal Torque Sensor'], 'PortHandles');
 ph_msens = get_param([subsys '/Motion Sensor'], 'PortHandles');
 ph_mref = get_param([subsys '/Mechanical Reference'], 'PortHandles');
+ph_fric = get_param([subsys '/Rotational Friction'], 'PortHandles');
 ph_i2sl = get_param([subsys '/CurrentPS2SL'], 'PortHandles');
 ph_t2sl = get_param([subsys '/TorquePS2SL'], 'PortHandles');
 ph_w2sl = get_param([subsys '/OmegaPS2SL'], 'PortHandles');
@@ -775,10 +729,12 @@ add_line(subsys, ph_isens.RConn(1), ph_i2sl.LConn(1), 'autorouting', 'smart');
 
 % Mechanical network: measure shaft motion and torque against reference.
 add_line(subsys, ph_pmsm.RConn(1), ph_tsens.LConn(1), 'autorouting', 'smart');
-ph_inertia = get_param([subsys '/Sensor Inertia'], 'PortHandles');
+ph_inertia = get_param([subsys '/Rotor Inertia'], 'PortHandles');
 add_line(subsys, ph_tsens.RConn(1), ph_inertia.LConn(1), 'autorouting', 'smart');
-add_line(subsys, ph_pmsm.RConn(1), ph_msens.LConn(1), 'autorouting', 'smart');
+add_line(subsys, ph_tsens.RConn(1), ph_msens.LConn(1), 'autorouting', 'smart');
+add_line(subsys, ph_tsens.RConn(1), ph_fric.LConn(1), 'autorouting', 'smart');
 add_line(subsys, ph_msens.RConn(1), ph_mref.LConn(1), 'autorouting', 'smart');
+add_line(subsys, ph_fric.RConn(1), ph_mref.LConn(1), 'autorouting', 'smart');
 add_line(subsys, ph_pmsm.RConn(2), ph_mref.LConn(1), 'autorouting', 'smart');
 
 add_line(subsys, ph_tsens.RConn(2), ph_t2sl.LConn(1), 'autorouting', 'smart');
@@ -842,7 +798,7 @@ function create_signal_in_subsystem(subsys, ref_params)
 add_block('built-in/Outport', [subsys '/speed_ref'], 'Port', '1');
 add_block('built-in/Outport', [subsys '/id_ref'], 'Port', '2');
 add_block('built-in/Outport', [subsys '/Te_load'], 'Port', '3');
-add_block('built-in/Outport', [subsys '/torque_ref'], 'Port', '4');
+add_block('built-in/Outport', [subsys '/throttle'], 'Port', '4');
 
 add_block('simulink/Sources/Ramp', [subsys '/Speed Ramp'], ...
     'Slope', num2str(ref_params.speed_ref / ref_params.speed_ramp_time), ...
@@ -861,22 +817,52 @@ add_block('simulink/Sources/Step', [subsys '/Load Step'], ...
     'Position', [70 170 140 200]);
 add_block('built-in/Constant', [subsys '/Throttle'], ...
     'Value', num2str(ref_params.throttle), ...
-    'Position', [70 235 140 255]);
-add_block('simulink/Discontinuities/Saturation', [subsys '/Throttle Sat'], ...
-    'UpperLimit', '1', ...
-    'LowerLimit', '0', ...
-    'Position', [170 232 225 258]);
-add_block('simulink/Math Operations/Gain', [subsys '/Throttle2Torque'], ...
-    'Gain', num2str(ref_params.throttle_torque_max), ...
-    'Position', [255 232 320 258]);
+    'Position', [100 235 150 255]);
 
 add_line(subsys, 'Speed Ramp/1', 'Speed Sat/1');
 add_line(subsys, 'Speed Sat/1', 'speed_ref/1');
 add_line(subsys, 'Id Ref/1', 'id_ref/1');
 add_line(subsys, 'Load Step/1', 'Te_load/1');
-add_line(subsys, 'Throttle/1', 'Throttle Sat/1');
-add_line(subsys, 'Throttle Sat/1', 'Throttle2Torque/1');
-add_line(subsys, 'Throttle2Torque/1', 'torque_ref/1');
+add_line(subsys, 'Throttle/1', 'throttle/1');
+end
+
+function create_thro_subsystem(subsys, ref_params)
+add_block('built-in/Inport', [subsys '/current_speed'], 'Port', '1');
+add_block('built-in/Inport', [subsys '/target_speed'], 'Port', '2');
+add_block('built-in/Inport', [subsys '/throttle'], 'Port', '3');
+
+add_block('built-in/Outport', [subsys '/torque_ref'], 'Port', '1');
+
+add_block('simulink/Math Operations/Gain', [subsys '/RPM2RadS'], ...
+    'Gain', '2*pi/60', ...
+    'Position', [110 85 155 105]);
+add_block('simulink/Math Operations/Sum', [subsys '/Speed Error'], ...
+    'Inputs', '+-', ...
+    'Position', [190 80 220 110]);
+add_block('simulink/Math Operations/Gain', [subsys '/Speed P'], ...
+    'Gain', num2str(ref_params.throttle_speed_kp), ...
+    'Position', [250 80 310 110]);
+add_block('simulink/Discontinuities/Saturation', [subsys '/Throttle Sat'], ...
+    'UpperLimit', '1', ...
+    'LowerLimit', '0', ...
+    'Position', [110 165 165 195]);
+add_block('simulink/Math Operations/Product', [subsys '/Throttle Product'], ...
+    'Inputs', '2', ...
+    'Position', [345 105 395 145]);
+add_block('simulink/Discontinuities/Saturation', [subsys '/Torque Sat'], ...
+    'UpperLimit', num2str(ref_params.throttle_torque_max), ...
+    'LowerLimit', '0', ...
+    'Position', [430 115 490 145]);
+
+add_line(subsys, 'target_speed/1', 'RPM2RadS/1');
+add_line(subsys, 'RPM2RadS/1', 'Speed Error/1');
+add_line(subsys, 'current_speed/1', 'Speed Error/2');
+add_line(subsys, 'Speed Error/1', 'Speed P/1');
+add_line(subsys, 'Speed P/1', 'Throttle Product/1');
+add_line(subsys, 'throttle/1', 'Throttle Sat/1');
+add_line(subsys, 'Throttle Sat/1', 'Throttle Product/2');
+add_line(subsys, 'Throttle Product/1', 'Torque Sat/1');
+add_line(subsys, 'Torque Sat/1', 'torque_ref/1');
 end
 
 function create_scope_subsystem(subsys)

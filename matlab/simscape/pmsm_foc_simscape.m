@@ -42,14 +42,26 @@ assignin('base', 'ref_params', ref_params);
 
 %% Build or load S-Function MEX if C++ controller is available
 cpp_sfun_path = fullfile(fileparts(mfilename('fullpath')), '..', 's_function');
-if exist(fullfile(cpp_sfun_path, 'sfun_foc_controller.cpp'), 'file')
-    fprintf('C++ S-Function source found. Building MEX...\n');
-    try
-        build_sfun_foc(cpp_sfun_path);
-        fprintf('S-Function MEX built successfully.\n');
-    catch ME
-        warning(ME.identifier, '%s', sprintf('Failed to build C++ S-Function: %s\nFalling back to MATLAB controller.', ME.message));
-    end
+cpp_sfun_src = fullfile(cpp_sfun_path, 'sfun_foc_controller.cpp');
+cpp_sfun_mex = fullfile(cpp_sfun_path, ['sfun_foc_controller.' mexext]);
+
+if ~exist(cpp_sfun_src, 'file')
+    error('pmsm_foc_simscape:missingSFunctionSource', ...
+        'Required C++ S-Function source is missing: %s', cpp_sfun_src);
+end
+
+fprintf('Building required C++ S-Function MEX...\n');
+try
+    build_sfun_foc(cpp_sfun_path);
+    rehash path;
+catch ME
+    error('pmsm_foc_simscape:buildSFunctionFailed', ...
+        'Failed to build required C++ S-Function: %s', ME.message);
+end
+
+if ~exist(cpp_sfun_mex, 'file')
+    error('pmsm_foc_simscape:missingSFunctionMex', ...
+        'C++ S-Function MEX was not produced: %s', cpp_sfun_mex);
 end
 
 %% Create the Simulink model (always regenerate to pick up latest fixes)

@@ -78,14 +78,15 @@ $$
 
 - 三相电流：`ia`、`ib`、`ic`
 - 电角度与机械角速度：`theta_e`、`omega_m`
-- 参考量：`speed_ref`、`id_ref`
+- 参考量：`speed_ref`、`id_ref`、`torque_ref`
 - 外部维护的积分状态：`integral_id`、`integral_iq`、`integral_speed`
 - 配置：`FOCConfig`
 
 实现特征：
 
 - 每步先对配置做自动整定。
-- 速度环输出 `iq_ref`，并带限幅与抗积分饱和回算。
+- 速度环先输出 `iq_ref`，并带限幅与抗积分饱和回算。
+- `torque_ref` 会按电机转矩常数在线换算为附加 `iq_ref`，再与速度环输出叠加后统一限幅。
 - 电流环执行 dq PI 调节并叠加交叉耦合前馈。
 - 电压矢量按 `Vdc / sqrt(3)` 做幅值限幅。
 - 最后经 inverse Park 和 SVPWM 输出三相占空比。
@@ -102,7 +103,7 @@ $$
 公开方法：
 
 - `configure(const FOCConfig&)`
-- `step(ia, ib, ic, theta_e, omega_m, speed_ref, id_ref)`
+- `step(ia, ib, ic, theta_e, omega_m, speed_ref, id_ref, torque_ref=0)`
 - `reset()`
 - `config() const`
 
@@ -119,12 +120,13 @@ $$
 
 1. `abc -> alpha-beta` 的 Clarke 变换。
 2. `alpha-beta -> dq` 的 Park 变换。
-3. 速度环产生 `iq_ref`。
-4. d 轴和 q 轴 PI 产生 `vd`、`vq`。
-5. 叠加解耦前馈项。
-6. 进行电压矢量限幅。
-7. inverse Park 回到 `alpha-beta`。
-8. SVPWM 生成 `duty_a`、`duty_b`、`duty_c`。
+3. 速度环产生基础 `iq_ref`。
+4. 将 `torque_ref` 在线换算为附加 `iq_ref` 并叠加后限幅。
+5. d 轴和 q 轴 PI 产生 `vd`、`vq`。
+6. 叠加解耦前馈项。
+7. 进行电压矢量限幅。
+8. inverse Park 回到 `alpha-beta`。
+9. SVPWM 生成 `duty_a`、`duty_b`、`duty_c`。
 
 ## 变换与调制接口
 
