@@ -6,7 +6,7 @@
 %   >> cd('path/to/pmsm_simscape/matlab/scripts')
 %   >> run_pmsm_simulation
 %
-% Can optionally use the C++ MEX implementation for the controller.
+% Uses the same C++ MEX controller core as the Simulink S-Function path.
 
 clear; clc; close all;
 
@@ -14,6 +14,8 @@ clear; clc; close all;
 script_dir = fileparts(mfilename('fullpath'));
 matlab_dir = fullfile(script_dir, '..');
 addpath(matlab_dir);
+addpath(script_dir);
+rehash path;
 
 %% ===== Motor Parameters (typical PMSM) =====
 motor_params = struct();
@@ -43,6 +45,7 @@ ctrl_params.Ki_speed = 0.0;
 ctrl_params.iq_max = 10.0;       % Max q-axis current [A]
 ctrl_params.id_max = 10.0;       % Max d-axis current [A]
 ctrl_params = derive_pi_ctrl_params(ctrl_params, motor_params);
+ctrl_params.Vdc = inv_params.Vdc;
 
 %% ===== Simulation Parameters =====
 sim_params = struct();
@@ -64,8 +67,15 @@ fprintf('Target speed: %d RPM, Vdc: %d V\n', ref_params.speed_ref, inv_params.Vd
 fprintf('Auto PI: omega_ci=%.1f rad/s, omega_cs=%.1f rad/s\n', ...
     ctrl_params.omega_ci, ctrl_params.omega_cs);
 
-%% Configuration
-use_cpp_controller = false;  % Set true to use C++ MEX controller
+%% Build controller MEX
+ctrl_params.Ts = sim_params.Ts_control;
+mex_path = fullfile(script_dir, ['foc_controller_mex.' mexext]);
+if ~exist(mex_path, 'file')
+    fprintf('Building C++ controller MEX for standalone simulation...\n');
+    build_foc_mex(script_dir);
+end
+
+clear('foc_controller_mex');
 
 %% Initial conditions [id, iq, omega_m, theta_m]
 % theta_m = mechanical angle; theta_e = p * theta_m
@@ -82,11 +92,6 @@ x_log = zeros(4, N);
 u_log = zeros(2, N);   % [vd, vq]
 ref_log = zeros(2, N); % [speed_ref, iq_ref]
 duty_log = zeros(3, N); % [da, db, dc]
-
-%% Controller state
-integral_id = 0;
-integral_iq = 0;
-integral_speed = 0;
 
 %% Simulation loop
 x = x0;
@@ -112,45 +117,22 @@ for k = 1:N
     else
         Te_load = 0;
     end
+
+    torque_ref = 0.0;
     
     %% FOC Controller
-    if use_cpp_controller
-        % Use C++ MEX controller (if compiled)
-        % [vd, vq] = foc_controller_mex(id, iq, omega_m, theta_e, speed_ref_rad, ...
-        %     ref_params.id_ref, dt, ctrl_params, motor_params);
-        error('C++ MEX controller not yet compiled. Run build_mex.m first.');
-    else
-        % --- Speed loop ---
-        speed_error = speed_ref_rad - omega_m;
-        integral_speed = integral_speed + speed_error * dt;
-        iq_ref = ctrl_params.Kp_speed * speed_error + ctrl_params.Ki_speed * integral_speed;
-        iq_ref = max(-ctrl_params.iq_max, min(ctrl_params.iq_max, iq_ref));
-        
-        id_ref = ref_params.id_ref;
-        
-        % --- d-axis current loop ---
-        id_error = id_ref - id;
-        integral_id = integral_id + id_error * dt;
-        vd = ctrl_params.Kp_id * id_error + ctrl_params.Ki_id * integral_id;
-        
-        % --- q-axis current loop ---
-        iq_error = iq_ref - iq;
-        integral_iq = integral_iq + iq_error * dt;
-        vq = ctrl_params.Kp_iq * iq_error + ctrl_params.Ki_iq * integral_iq;
-        
-        % --- Decoupling feedforward ---
-        omega_e = motor_params.p * omega_m;
-        vd = vd - omega_e * motor_params.Lq * iq;
-        vq = vq + omega_e * motor_params.Ld * id + omega_e * motor_params.flux_pm;
-        
-        % --- Voltage limiting ---
-        Vmax = inv_params.Vdc / sqrt(3);
-        V_mag = sqrt(vd^2 + vq^2);
-        if V_mag > Vmax
-            vd = vd * Vmax / V_mag;
-            vq = vq * Vmax / V_mag;
-        end
-    end
+    [i_alpha, i_beta] = pmsm_lib.inv_park_transform(id, iq, theta_e);
+    ia = i_alpha;
+    ib = -0.5 * i_alpha + (sqrt(3) / 2) * i_beta;
+    ic = -0.5 * i_alpha - (sqrt(3) / 2) * i_beta;
+
+    ctrl_output = foc_controller_mex( ...
+        ia, ib, ic, theta_e, omega_m, speed_ref_rad, ...
+        ref_params.id_ref, dt, ctrl_params, motor_params, torque_ref);
+
+    vd = ctrl_output(6);
+    vq = ctrl_output(7);
+    iq_ref = ctrl_output(8);
     
     %% SVPWM (for logging)
     [v_alpha, v_beta] = pmsm_lib.inv_park_transform(vd, vq, theta_e);

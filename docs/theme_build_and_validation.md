@@ -87,7 +87,8 @@ cmake --build .
 
 - 不依赖 Simulink / Simscape。
 - 使用前向欧拉积分跑 dq 模型闭环。
-- 适合先验证控制算法和默认参数。
+- 启动时会自动编译并调用 `foc_controller_mex`。
+- 适合先验证与 Simulink 同源的控制算法和默认参数。
 
 ### S-Function 编译
 
@@ -106,6 +107,22 @@ cmake --build .
 - C++17
 - `-DMATLAB_MEX_FILE`
 - MATLAB 现代 MEX API 选项 `-R2018a`
+
+### 独立 MATLAB 控制器 MEX 编译
+
+- `matlab/scripts/build_foc_mex.m`
+
+编译输入包括：
+
+- `cpp/mex/foc_controller_mex.cpp`
+- `cpp/src/foc_controller.cpp`
+- `cpp/src/transforms.cpp`
+- `cpp/src/pid_controller.cpp`
+- `cpp/src/svpwm.cpp`
+
+用途：
+
+- 让 `run_pmsm_simulation.m` 和 Simulink S-Function 复用同一套 C++ 控制实现。
 
 ### Simscape / Simulink 构建
 

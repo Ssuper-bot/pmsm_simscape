@@ -30,3 +30,4 @@ fprintf('  create_pmsm_foc_all_in_model - Build the assembled all-in Simulink mo
 fprintf('  validate_pmsm_foc_modules - Build/compile/short-sim all modules and all-in\n');
 fprintf('  test_pmsm_lib         - Run MATLAB unit tests\n');
 fprintf('  build_sfun_foc        - Compile C++ S-Function MEX\n');
+fprintf('  build_foc_mex         - Compile standalone C++ controller MEX\n');

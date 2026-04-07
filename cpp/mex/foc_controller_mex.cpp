@@ -8,6 +8,8 @@
  * Usage in MATLAB:
  *   output = foc_controller_mex(ia, ib, ic, theta_e, omega_m, ...
  *                               speed_ref, id_ref, dt, ctrl_struct, motor_struct);
+ *   output = foc_controller_mex(ia, ib, ic, theta_e, omega_m, ...
+ *                               speed_ref, id_ref, dt, ctrl_struct, motor_struct, torque_ref);
  *
  *   output = [duty_a, duty_b, duty_c, id_meas, iq_meas, vd, vq, iq_ref]
  */
@@ -26,7 +28,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
 {
     if (nrhs < 8) {
         mexErrMsgIdAndTxt("pmsm:foc_mex:nrhs",
-            "Usage: foc_controller_mex(ia,ib,ic,theta_e,omega_m,speed_ref,id_ref,dt [,ctrl_struct, motor_struct])");
+            "Usage: foc_controller_mex(ia,ib,ic,theta_e,omega_m,speed_ref,id_ref,dt [,ctrl_struct, motor_struct, torque_ref])");
         return;
     }
 
@@ -38,9 +40,10 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
     double speed_ref = mxGetScalar(prhs[5]);
     double id_ref    = mxGetScalar(prhs[6]);
     double dt        = mxGetScalar(prhs[7]);
+    double torque_ref = (nrhs >= 11) ? mxGetScalar(prhs[10]) : 0.0;
 
     // Reconfigure if config structs provided
-    if (nrhs >= 10 && !g_initialized) {
+    if (nrhs >= 10) {
         pmsm::FOCConfig config;
 
         // ctrl_params struct
@@ -60,6 +63,12 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
             if (hasField(ctrl, "omega_cs")) {
                 config.omega_cs = mxGetScalar(mxGetField(ctrl, 0, "omega_cs"));
             }
+            if (hasField(ctrl, "Vdc")) {
+                config.Vdc = mxGetScalar(mxGetField(ctrl, 0, "Vdc"));
+            }
+            if (hasField(ctrl, "Ts")) {
+                config.Ts = mxGetScalar(mxGetField(ctrl, 0, "Ts"));
+            }
         }
 
         // motor_params struct
@@ -78,7 +87,9 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
             }
         }
 
-        config.Ts = dt;
+        if (config.Ts <= 0.0) {
+            config.Ts = dt;
+        }
         g_controller.configure(config);
         g_initialized = true;
     } else if (!g_initialized) {
@@ -90,7 +101,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
 
     // Run one step
     pmsm::FOCOutput output = g_controller.step(
-        ia, ib, ic, theta_e, omega_m, speed_ref, id_ref, 0.0);
+        ia, ib, ic, theta_e, omega_m, speed_ref, id_ref, torque_ref);
 
     // Return output as 1x8 vector
     plhs[0] = mxCreateDoubleMatrix(1, 8, mxREAL);

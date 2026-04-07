@@ -100,6 +100,7 @@ run_pmsm_simulation
 
 - 不依赖 Simulink 或 Simscape。
 - 用前向欧拉积分验证 FOC 算法闭环行为。
+- 默认会编译并调用 `cpp/mex/foc_controller_mex.cpp`，与 Simulink S-Function 复用同一套 C++ 控制核心。
 - 默认母线电压 `Vdc = 24 V`。
 
 ### 4. Simscape / Simulink 模型生成与验证
@@ -114,6 +115,7 @@ test_simscape_motor_module
 
 - `pmsm_foc_simscape` 会重新生成 `matlab/models/pmsm_foc_model.slx`。
 - 该入口会强制编译 `matlab/s_function/sfun_foc_controller.cpp` 对应的 MEX，因为 `FOC Controller` 已通过 C++ S-Function 接入。
+- `Three Invertor` 前插入了一个控制周期的 `Unit Delay`，用来表示数字控制计算延时并打断原先的代数环。
 - builder 默认母线电压 `Vdc = 48 V`，与独立脚本仿真不同，联调时应显式统一参数。
 
 ### 5. Python 绑定与 ROS2

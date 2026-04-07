@@ -65,6 +65,7 @@ Python 包内部职责：
 
 - MATLAB 初始化：`setup_project.m`
 - 独立仿真：`matlab/scripts/run_pmsm_simulation.m`
+- 独立仿真 MEX 编译：`matlab/scripts/build_foc_mex.m`
 - S-Function 编译：`matlab/scripts/build_sfun_foc.m`
 - Simscape 主入口：`matlab/simscape/pmsm_foc_simscape.m`
 - 模块验证：`matlab/simscape/validate_pmsm_foc_modules.m`
