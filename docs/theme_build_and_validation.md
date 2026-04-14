@@ -78,6 +78,16 @@ cmake --build .
 
 - 加入 `matlab/`、`matlab/scripts/`、`matlab/simscape/`、`matlab/s_function/`、`matlab/tests/` 到 MATLAB 路径。
 - 打印当前可用命令入口。
+- 支持 `setup_project('compare')`，初始化完成后直接打开 `compare_first_order_bandwidths` UI。
+
+推荐用法：
+
+```matlab
+setup_project
+setup_project('compare')
+```
+
+其中 `compare_first_order_bandwidths` 适合在正式跑 Simulink / Simscape 之前，先检查 PI 零极点相消、失配和纯 P 控制的闭环差异。
 
 ### 独立仿真
 
@@ -89,6 +99,16 @@ cmake --build .
 - 使用前向欧拉积分跑 dq 模型闭环。
 - 启动时会自动编译并调用 `foc_controller_mex`。
 - 适合先验证与 Simulink 同源的控制算法和默认参数。
+
+### 控制器带宽对比
+
+- `matlab/scripts/compare_first_order_bandwidths.m`
+
+特点：
+
+- 不依赖 Simulink / Simscape。
+- 提供交互式 UI，对比 exact-cancel PI、mismatched PI 和 P-only 三种闭环。
+- 可用于快速观察带宽、零点失配、稳态误差和频域响应差异。
 
 ### S-Function 编译
 
@@ -192,10 +212,11 @@ Launch 文件：`python/launch/pmsm_system.launch.py`
 ## 建议的验证顺序
 
 1. 先跑 C++ 单元测试，确认算法基础行为没有退化。
-2. 再跑 `run_pmsm_simulation`，确认闭环曲线大体合理。
-3. 然后跑 `pmsm_foc_simscape` 与 `validate_pmsm_foc_modules`，确认 builder、模块接口和短仿真都可用。
-4. 需要电机结构回归时，再跑 `test_simscape_motor_module`。
-5. 最后再做 ROS2 与 MATLAB 桥接联调。
+2. 再跑 `compare_first_order_bandwidths`，先确认目标带宽和 PI 零点配置是否符合预期。
+3. 然后跑 `run_pmsm_simulation`，确认闭环曲线大体合理。
+4. 再跑 `pmsm_foc_simscape` 与 `validate_pmsm_foc_modules`，确认 builder、模块接口和短仿真都可用。
+5. 需要电机结构回归时，再跑 `test_simscape_motor_module`。
+6. 最后再做 ROS2 与 MATLAB 桥接联调。
 
 ## 当前已知差异与风险
 

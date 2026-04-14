@@ -2,7 +2,7 @@
 
 永磁同步电机 PMSM 的 FOC 控制、Simscape 建模、C++ 算法实现，以及 Python/ROS2 胶水层的联合仓库。
 
-当前文档基于仓库代码状态同步到 2026-04-07。
+当前文档基于仓库代码状态同步到 2026-04-14。
 
 ## 当前状态
 
@@ -43,6 +43,7 @@ pmsm_simscape/
 
 - `setup_project.m`
 - `matlab/scripts/run_pmsm_simulation.m`
+- `matlab/scripts/compare_first_order_bandwidths.m`
 - `matlab/simscape/pmsm_foc_simscape.m`
 - `matlab/simscape/create_pmsm_foc_all_in_model.m`
 - `matlab/simscape/validate_pmsm_foc_modules.m`
@@ -90,6 +91,17 @@ cd('/Users/wangguandi/Documents/pmsm_simscape')
 setup_project
 ```
 
+如果希望在初始化后直接打开一阶对象 PI 对比工具，可以执行：
+
+```matlab
+setup_project('compare')
+```
+
+`setup_project` 当前会完成两件事：
+
+- 把 `matlab/`、`matlab/scripts/`、`matlab/simscape/`、`matlab/s_function/`、`matlab/tests/` 加入 MATLAB 路径。
+- 打印当前主入口命令，包括 `compare_first_order_bandwidths`。
+
 ### 3. MATLAB 独立仿真
 
 ```matlab
@@ -103,7 +115,19 @@ run_pmsm_simulation
 - 默认会编译并调用 `cpp/mex/foc_controller_mex.cpp`，与 Simulink S-Function 复用同一套 C++ 控制核心。
 - 默认母线电压 `Vdc = 24 V`。
 
-### 4. Simscape / Simulink 模型生成与验证
+### 4. 一阶对象带宽对比工具
+
+```matlab
+compare_first_order_bandwidths
+```
+
+特点：
+
+- 不依赖 Simulink 或 Simscape。
+- 用交互式 UI 对比精确零极点相消 PI、失配 PI 和纯 P 控制。
+- 适合快速理解当前自动整定公式对应的带宽、超调、稳态误差和频域差异。
+
+### 5. Simscape / Simulink 模型生成与验证
 
 ```matlab
 pmsm_foc_simscape
@@ -118,7 +142,7 @@ test_simscape_motor_module
 - `Three Invertor` 前插入了一个控制周期的 `Unit Delay`，用来表示数字控制计算延时并打断原先的代数环。
 - builder 默认母线电压 `Vdc = 48 V`，与独立脚本仿真不同，联调时应显式统一参数。
 
-### 5. Python 绑定与 ROS2
+### 6. Python 绑定与 ROS2
 
 构建 pybind11 模块：
 

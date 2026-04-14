@@ -39,6 +39,13 @@
 - Simulink 模型与参考模型：`matlab/models/`
 - MATLAB 测试：`matlab/tests/`
 
+`matlab/scripts/` 当前常用入口：
+
+- `run_pmsm_simulation.m`：独立 dq 闭环仿真。
+- `compare_first_order_bandwidths.m`：一阶对象 PI 带宽和零点配置对比 UI。
+- `build_foc_mex.m`：独立控制器 MEX 编译。
+- `build_sfun_foc.m`：S-Function MEX 编译。
+
 `matlab/simscape/` 当前最关键的入口：
 
 - `pmsm_foc_builder.m`：共享 builder，负责参数默认值、模块创建、all-in 创建、模型验证。
@@ -65,6 +72,7 @@ Python 包内部职责：
 
 - MATLAB 初始化：`setup_project.m`
 - 独立仿真：`matlab/scripts/run_pmsm_simulation.m`
+- 控制器带宽对比：`matlab/scripts/compare_first_order_bandwidths.m`
 - 独立仿真 MEX 编译：`matlab/scripts/build_foc_mex.m`
 - S-Function 编译：`matlab/scripts/build_sfun_foc.m`
 - Simscape 主入口：`matlab/simscape/pmsm_foc_simscape.m`

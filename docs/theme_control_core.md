@@ -63,6 +63,28 @@ $$
 - 若 `omega_ci <= 0`，则按 $2\pi(f_{sw}/10)$ 推导。
 - 若 `omega_cs <= 0`，则按 `omega_ci / 10` 推导。
 
+## 对应的 MATLAB 对比工具
+
+脚本：`matlab/scripts/compare_first_order_bandwidths.m`
+
+用途：
+
+- 用归一化一阶 RL 电流对象展示 PI 零极点相消的直观效果。
+- 对比 exact-cancel PI、mismatched PI、P-only 三种闭环在阶跃、正弦、斜坡和频域下的差异。
+- 帮助解释为什么当前自动整定在电流环里采用
+
+$$
+K_p = L\omega_{ci},\quad K_i = R_s\omega_{ci}
+$$
+
+因为此时有：
+
+$$
+\frac{K_i}{K_p} = \frac{R_s}{L} = \omega_e
+$$
+
+即控制器零点放在 $-\omega_e$，与一阶 RL 对象极点对齐。
+
 ## 两类控制接口
 
 ### 无状态接口
