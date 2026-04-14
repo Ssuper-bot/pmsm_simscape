@@ -25,6 +25,10 @@ struct FOCConfig {
     // Speed PI gains
     double Kp_speed = 0.5;
     double Ki_speed = 10.0;
+    // Tuning and loop composition switches
+    bool auto_tune_current = true;
+    bool auto_tune_speed = true;
+    bool enable_internal_speed_loop = true;
     // Motor parameters
     double Rs = 0.5;           // Stator resistance [Ohm]
     double Ld = 1.4e-3;        // d-axis inductance [H]
@@ -59,6 +63,21 @@ FOCConfig derive_pi_gains_from_motor(const FOCConfig& config);
 /** Convert torque reference to q-axis current reference. */
 double torque_to_iq_ref(double torque_ref, double id_ref, const FOCConfig& config);
 
+/**
+ * @brief Stateless speed-loop PI step.
+ *
+ * @param speed_ref       Speed reference [rad/s]
+ * @param omega_m         Mechanical speed [rad/s]
+ * @param integral_speed  Speed PI integrator state (in/out)
+ * @param config          Controller configuration
+ * @return q-axis current reference from speed loop [A]
+ */
+double speed_controller_step(
+    double speed_ref, double omega_m,
+    double& integral_speed,
+    const FOCConfig& config
+);
+
 /** FOC controller output */
 struct FOCOutput {
     double duty_a;
@@ -72,6 +91,19 @@ struct FOCOutput {
 };
 
 /**
+ * @brief Stateless current-loop FOC step.
+ *
+ * This interface assumes iq_ref is provided externally.
+ */
+FOCOutput current_controller_step(
+    double ia, double ib, double ic,
+    double theta_e, double omega_m,
+    double id_ref, double iq_ref,
+    double& integral_id, double& integral_iq,
+    const FOCConfig& config
+);
+
+/**
  * @brief Stateless FOC controller step function.
  *
  * This is the primary interface for S-Function integration.
@@ -82,7 +114,8 @@ struct FOCOutput {
  * @param omega_m         Mechanical speed [rad/s]
  * @param speed_ref       Speed reference [rad/s]
  * @param id_ref          d-axis current reference [A]
- * @param torque_ref      Torque reference [N*m]
+ * @param torque_ref      Torque reference [N*m] when internal speed loop is enabled,
+ *                        or external iq_ref [A] when disabled.
  * @param integral_id     d-axis PI integrator state (in/out)
  * @param integral_iq     q-axis PI integrator state (in/out)
  * @param integral_speed  Speed PI integrator state (in/out)
@@ -115,6 +148,14 @@ public:
     FOCOutput step(double ia, double ib, double ic,
                    double theta_e, double omega_m,
                    double speed_ref, double id_ref, double torque_ref = 0.0);
+
+    /** Execute only speed-loop step and return iq_ref. */
+    double step_speed(double speed_ref, double omega_m);
+
+    /** Execute only current-loop step with external iq_ref. */
+    FOCOutput step_current(double ia, double ib, double ic,
+                           double theta_e, double omega_m,
+                           double id_ref, double iq_ref);
 
     /** Reset all controller states */
     void reset();

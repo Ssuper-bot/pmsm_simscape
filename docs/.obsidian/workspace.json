@@ -1,0 +1,155 @@
+{
+  "main": {
+    "id": "3ee7a8e3227a3502",
+    "type": "split",
+    "children": [
+      {
+        "id": "c9bcfd1ef4f22cfc",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "bcb710ed3871f518",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "theme_simscape_simulation.md",
+                "mode": "preview",
+                "source": false
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "d45bb5a51672e5be",
+    "type": "split",
+    "children": [
+      {
+        "id": "f16cb0f31f8edce7",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "ff1981a4df460ff6",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical"
+              }
+            }
+          },
+          {
+            "id": "c70c21635e8403cb",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              }
+            }
+          },
+          {
+            "id": "2d4ed72a52f042a2",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {}
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "right": {
+    "id": "9f5158206f2c98fc",
+    "type": "split",
+    "children": [
+      {
+        "id": "e6a29076edea0cf3",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "d0d72667aab49866",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "theme_simscape_simulation.md",
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              }
+            }
+          },
+          {
+            "id": "75b77c61bc9bbb14",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "file": "theme_simscape_simulation.md",
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              }
+            }
+          },
+          {
+            "id": "c4007b83307daaf6",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true
+              }
+            }
+          },
+          {
+            "id": "e394cb634972dc04",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "theme_simscape_simulation.md"
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:Open quick switcher": false,
+      "graph:Open graph view": false,
+      "canvas:Create new canvas": false,
+      "daily-notes:Open today's daily note": false,
+      "templates:Insert template": false,
+      "command-palette:Open command palette": false
+    }
+  },
+  "active": "bcb710ed3871f518",
+  "lastOpenFiles": [
+    "theme_build_and_validation.md",
+    "overview.md",
+    "cpp_overview.md"
+  ]
+}

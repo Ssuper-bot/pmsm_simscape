@@ -9,6 +9,7 @@
 - 总装入口：`matlab/simscape/create_pmsm_foc_all_in_model.m`
 - 兼容入口：`matlab/simscape/create_pmsm_foc_model.m`
 - Simscape 组件：`matlab/simscape/pmsm_motor.ssc`
+- S-Function 包装（速度环）：`matlab/s_function/sfun_speed_controller.cpp`
 - S-Function 包装：`matlab/s_function/sfun_foc_controller.cpp`
 - S-Function 编译：`matlab/scripts/build_sfun_foc.m`
 - 独立仿真：`matlab/scripts/run_pmsm_simulation.m`
@@ -24,7 +25,7 @@
 1. 检查 Simulink 是否可用。
 2. 获取默认参数 `motor_params`、`inv_params`、`ctrl_params`、`sim_params`、`ref_params`。
 3. 把参数注入 base workspace。
-4. 如果检测到 `sfun_foc_controller.cpp`，尝试自动编译 MEX。
+4. 检测 speed/current 两个 S-Function 源并自动编译 MEX。
 5. 删除旧 `matlab/models/pmsm_foc_model.slx`。
 6. 调用 `create_pmsm_foc_all_in_model` 重新生成 all-in 模型。
 
@@ -43,9 +44,12 @@
 - `signal_in`
 	生成 `speed_ref`、`id_ref`、`load_torque`、`throttle`。
 - `thro`
-	根据当前速度、目标速度和油门开度生成 `torque_ref`。
+	当前实现为油门到 `iq_ref_ff` 的前馈通道：`throttle -> saturation -> gain -> iq saturation`。
+	`current_speed` 与 `target_speed` 端口目前保留但不参与计算。
 - `foc_controller`
-	现在是一个薄封装子系统：把测量量和参考量打包后送入 `sfun_foc_controller`，Clarke / Park / PI / inverse Park / SVPWM 与 `torque_ref -> iq_ref` 全部在 C++ 中实现。
+	采用 `Speed Core + FOC Core` 双 S-Function：
+	`Speed Core` 产生 `iq_ref_speed`，与外部 `iq_ref_cmd` 相加后限幅，再送入 `FOC Core`。
+	`FOC Core` 只执行电流环与调制（不再接收 `speed_ref`）。
 - `three_invertor`
 	生成三相平均电压输出。
 - `motor`
@@ -117,55 +121,124 @@
 - `inv_params.fsw = 20e3`
 - `ctrl_params.iq_max = 10`
 - `ctrl_params.id_max = 10`
+- `ctrl_params.enable_internal_speed_loop = false`
 - `sim_params.validation_t_end = 0.02`
-- `ref_params.throttle = 0.2`
-- `ref_params.throttle_speed_kp = 0.05`
-- `ref_params.throttle_torque_max = 0.8`
+- `ref_params.throttle = 0.0`
+- `ref_params.throttle_iq_max = ctrl_params.iq_max`
 
 PI 参数会在 builder 内按电机参数自动推导。
 
 ## S-Function 接口定义
 
+### Speed Core
+
+文件：`matlab/s_function/sfun_speed_controller.cpp`
+
+- 输入宽度：2（`speed_ref` RPM，`omega_m` rad/s）
+- 输出宽度：1（`iq_ref`）
+- 对话框参数：4 个（`Ts`、`Kp_speed`、`Ki_speed`、`iq_max`）
+- DWork：1 个（`integral_speed`）
+
+### FOC Core（current-core）
+
 文件：`matlab/s_function/sfun_foc_controller.cpp`
 
-S-Function 单端口输入宽度为 8：
+- 输入宽度：7
+	1. `ia`
+	2. `ib`
+	3. `ic`
+	4. `theta_e`
+	5. `omega_m`
+	6. `id_ref`
+	7. `iq_ref`
+- 输出宽度：5（`da`、`db`、`dc`、`id_meas`、`iq_meas`）
+- 对话框参数：15 个（`Ts`、`Vdc`、`omega_ci`、`Rs`、`Ld`、`Lq`、`flux_pm`、`pole_pairs`、`iq_max`、`id_max`、`Kp_id`、`Ki_id`、`Kp_iq`、`Ki_iq`、`auto_tune_current`）
+- DWork：2 个（`integral_id`、`integral_iq`）
 
-1. `ia`
-2. `ib`
-3. `ic`
-4. `theta_e`
-5. `omega_m`
-6. `speed_ref`（RPM）
-7. `id_ref`
-8. `torque_ref`
+### 子系统内合成关系
 
-输出宽度为 5：
-
-1. `da`
-2. `db`
-3. `dc`
-4. `id_meas`
-5. `iq_meas`
-
-对话框参数共 13 个，覆盖采样时间、母线电压、带宽、电机参数和限幅。
-
-状态管理方式：
-
-- 3 个 DWork：`integral_id`、`integral_iq`、`integral_speed`
-
-builder 当前不再在子系统层保留 MATLAB Fcn、PID block 或 `torque_ref -> iq_ref` 的本地实现；上述换算直接在 C++ 控制核心内完成。换算关系文档化如下：
+在 `foc_controller` 子系统内，`iq_ref` 的合成关系为：
 
 $$
-K_t = 1.5\,p\,(\psi_f + (L_d-L_q)i_d)
+iq_{ref}^{core} = \mathrm{sat}\left(iq_{ref}^{speed} + iq_{ref}^{cmd}\right)
 $$
 
-$$
-iq_{ref} =
-\begin{cases}
-0, & |K_t| < 10^{-6} \\
-T_e^{ref} / K_t, & \text{otherwise}
-\end{cases}
-$$
+其中 `iq_ref^speed` 来自 `Speed Core`，`iq_ref^cmd` 来自外部前馈（如 `thro` 模块输出）。
+
+### 电流环 PI 调参语义
+
+- `auto_tune_current = 1`：`FOC Core` 依据 `omega_ci` 与电机参数自动推导电流环 PI。
+- `auto_tune_current = 0`：`FOC Core` 使用对话框中的 `Kp_id`、`Ki_id`、`Kp_iq`、`Ki_iq` 作为手动 PI 参数。
+
+### 手动调参（在 MATLAB 中）
+
+本节说明如何在 MATLAB base workspace 里临时覆盖控制器参数（`ctrl_params_override`），在不改源码的情况下手动设置电流环/速度环 PI 参数并重建仿真模型。
+
+步骤：
+
+1. （可选）预编译 S-Function（避免每次运行时重新编译）：
+```matlab
+% 只需执行一次
+addpath(fullfile(pwd,'matlab','scripts'));
+build_sfun_foc(fullfile(pwd,'matlab','s_function'));
+```
+
+2. 在 base workspace 设置 `ctrl_params_override`：
+```matlab
+ctrl_params_override = struct();
+% 电流环（关闭自动整定）
+ctrl_params_override.auto_tune_current = 0;
+ctrl_params_override.Kp_id = 8;
+ctrl_params_override.Ki_id = 3000;
+ctrl_params_override.Kp_iq = 8;
+ctrl_params_override.Ki_iq = 3000;
+% 速度环（关闭自动整定）
+ctrl_params_override.auto_tune_speed = 0;
+ctrl_params_override.Kp_speed = 0.12;
+ctrl_params_override.Ki_speed = 1.5;
+% 可选：显式带宽/限幅
+ctrl_params_override.omega_ci = 12566.37;
+ctrl_params_override.iq_max = 10;
+```
+
+3. 生成/重建模型并把参数写回 workspace：
+```matlab
+pmsm_foc_simscape; % 会读取 base workspace 的 *_override 并生成模型
+% 或者只生成参数并用 builder 手动生成模型（不强制编译 MEX）
+[motor_params,inv_params,ctrl_params,sim_params,ref_params] = pmsm_foc_builder('default_parameters');
+fn = fieldnames(ctrl_params_override); for i=1:numel(fn); ctrl_params.(fn{i}) = ctrl_params_override.(fn{i}); end
+pmsm_foc_builder('create_all_in_model','pmsm_foc_model',motor_params,inv_params,ctrl_params,sim_params,ref_params);
+```
+
+4. 运行仿真并检查结果：
+```matlab
+sim('pmsm_foc_model','StopTime','0.08');
+% 或用 builder 的验证接口
+pmsm_foc_builder('validate_model','pmsm_foc_model',0.08);
+```
+
+5. 验证 S-Function 接收到的参数：
+```matlab
+get_param('pmsm_foc_model/FOC Controller/FOC Core','Parameters')
+get_param('pmsm_foc_model/FOC Controller/Speed Core','Parameters')
+% 查看合并后的 ctrl_params
+disp(ctrl_params)
+```
+
+6. 清理 override，恢复默认行为：
+```matlab
+clear ctrl_params_override
+pmsm_foc_simscape; % 或重新运行 builder
+```
+
+注意事项：
+- `pmsm_foc_builder('derive_pi_ctrl_params',...)` 会在 `auto_tune_current==1` 或 `auto_tune_speed==1` 时自动覆盖 PI 参数，若要使用手动值，务必把对应的 `auto_tune_*` 设置为 `0`。
+- `pmsm_foc_simscape` 当前会尝试（默认）编译 S-Function MEX；如不希望每次编译，先预编译或修改脚本（见本文件“快速工作流”）。
+- 过高的带宽或 Kp/Ki 会导致占空比饱和与跟踪失稳；在调增带宽时同时监测占空比饱和命中数（`probe` 或 `Scope`）并逐步增益。
+
+示例：典型起点
+- `omega_ci ≈ 2π*(fsw/10)`（builder 默认）
+- 若 `omega_ci=12566.37`，推导结果可能为 `Kp_id≈17.6, Ki_id≈6283`（可据此作为参考初值）。
 
 ## 验证方式
 

@@ -1,5 +1,6 @@
 #include "pid_controller.h"
 #include <algorithm>
+#include <cmath>
 
 namespace pmsm {
 
@@ -21,7 +22,7 @@ double PIController::step(double error, double dt) {
     output = std::clamp(output, config_.output_min, config_.output_max);
 
     // Anti-windup: back-calculate integral if saturated
-    if (output != p_term + i_term) {
+    if (output != p_term + i_term && std::abs(config_.Ki) > 1e-12) {
         integral_ = (output - p_term) / config_.Ki;
     }
 

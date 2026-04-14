@@ -1,5 +1,5 @@
 function model_path = create_thro_module(model_name)
-%CREATE_THRO_MODULE Build the standalone throttle-to-torque module model.
+%CREATE_THRO_MODULE Build the standalone throttle-to-iq feedforward module.
 
 if nargin < 1 || isempty(model_name)
     model_name = 'pmsm_module_thro';

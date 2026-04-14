@@ -35,6 +35,8 @@
 - 算法函数库：`matlab/+pmsm_lib/`
 - Simscape / Simulink builder：`matlab/simscape/`
 - S-Function 源与 MEX 产物：`matlab/s_function/`
+	- `sfun_speed_controller.cpp`：速度环 core
+	- `sfun_foc_controller.cpp`：电流环 + 调制 core
 - 运行脚本：`matlab/scripts/`
 - Simulink 模型与参考模型：`matlab/models/`
 - MATLAB 测试：`matlab/tests/`
@@ -44,12 +46,12 @@
 - `run_pmsm_simulation.m`：独立 dq 闭环仿真。
 - `compare_first_order_bandwidths.m`：一阶对象 PI 带宽和零点配置对比 UI。
 - `build_foc_mex.m`：独立控制器 MEX 编译。
-- `build_sfun_foc.m`：S-Function MEX 编译。
+- `build_sfun_foc.m`：同时编译 `sfun_speed_controller` 与 `sfun_foc_controller` 两个 S-Function MEX。
 
 `matlab/simscape/` 当前最关键的入口：
 
-- `pmsm_foc_builder.m`：共享 builder，负责参数默认值、模块创建、all-in 创建、模型验证。
-- `pmsm_foc_simscape.m`：主入口，加载参数、尝试构建 S-Function、重新生成 all-in 模型。
+- `pmsm_foc_builder.m`：共享 builder，负责参数默认值、模块创建、all-in 创建、模型验证；FOC 子系统采用 `Speed Core + FOC Core` 双 S-Function 结构。
+- `pmsm_foc_simscape.m`：主入口，加载参数、构建 speed/current 两个 S-Function、重新生成 all-in 模型。
 - `create_*_module.m`：单模块入口。
 - `create_pmsm_foc_all_in_model.m`：总装入口。
 - `create_pmsm_foc_model.m`：兼容旧调用名的包装器。

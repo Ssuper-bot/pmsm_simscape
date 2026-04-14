@@ -9,9 +9,14 @@
  *   output = foc_controller_mex(ia, ib, ic, theta_e, omega_m, ...
  *                               speed_ref, id_ref, dt, ctrl_struct, motor_struct);
  *   output = foc_controller_mex(ia, ib, ic, theta_e, omega_m, ...
- *                               speed_ref, id_ref, dt, ctrl_struct, motor_struct, torque_ref);
+ *                               speed_ref, id_ref, dt, ctrl_struct, motor_struct, torque_or_iq_ref);
  *
  *   output = [duty_a, duty_b, duty_c, id_meas, iq_meas, vd, vq, iq_ref]
+ *
+ *   When ctrl_struct.enable_internal_speed_loop == 1 (default),
+ *   the 11th scalar is interpreted as torque_ref [N*m].
+ *   When ctrl_struct.enable_internal_speed_loop == 0,
+ *   the 11th scalar is interpreted as external iq_ref [A].
  */
 
 #include "mex.h"
@@ -28,7 +33,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
 {
     if (nrhs < 8) {
         mexErrMsgIdAndTxt("pmsm:foc_mex:nrhs",
-            "Usage: foc_controller_mex(ia,ib,ic,theta_e,omega_m,speed_ref,id_ref,dt [,ctrl_struct, motor_struct, torque_ref])");
+            "Usage: foc_controller_mex(ia,ib,ic,theta_e,omega_m,speed_ref,id_ref,dt [,ctrl_struct, motor_struct, torque_or_iq_ref])");
         return;
     }
 
@@ -40,7 +45,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
     double speed_ref = mxGetScalar(prhs[5]);
     double id_ref    = mxGetScalar(prhs[6]);
     double dt        = mxGetScalar(prhs[7]);
-    double torque_ref = (nrhs >= 11) ? mxGetScalar(prhs[10]) : 0.0;
+    double torque_or_iq_ref = (nrhs >= 11) ? mxGetScalar(prhs[10]) : 0.0;
 
     // Reconfigure if config structs provided
     if (nrhs >= 10) {
@@ -57,6 +62,15 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
             config.Ki_speed = mxGetScalar(mxGetField(ctrl, 0, "Ki_speed"));
             config.iq_max   = mxGetScalar(mxGetField(ctrl, 0, "iq_max"));
             config.id_max   = mxGetScalar(mxGetField(ctrl, 0, "id_max"));
+            if (hasField(ctrl, "auto_tune_current")) {
+                config.auto_tune_current = mxGetScalar(mxGetField(ctrl, 0, "auto_tune_current")) != 0.0;
+            }
+            if (hasField(ctrl, "auto_tune_speed")) {
+                config.auto_tune_speed = mxGetScalar(mxGetField(ctrl, 0, "auto_tune_speed")) != 0.0;
+            }
+            if (hasField(ctrl, "enable_internal_speed_loop")) {
+                config.enable_internal_speed_loop = mxGetScalar(mxGetField(ctrl, 0, "enable_internal_speed_loop")) != 0.0;
+            }
             if (hasField(ctrl, "omega_ci")) {
                 config.omega_ci = mxGetScalar(mxGetField(ctrl, 0, "omega_ci"));
             }
@@ -101,7 +115,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[])
 
     // Run one step
     pmsm::FOCOutput output = g_controller.step(
-        ia, ib, ic, theta_e, omega_m, speed_ref, id_ref, torque_ref);
+        ia, ib, ic, theta_e, omega_m, speed_ref, id_ref, torque_or_iq_ref);
 
     // Return output as 1x8 vector
     plhs[0] = mxCreateDoubleMatrix(1, 8, mxREAL);

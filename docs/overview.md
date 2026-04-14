@@ -5,6 +5,8 @@
 ## 这次同步的主结论
 
 - Simulink 主建模路径已经稳定为模块化 builder：先建 `signal_in`、`thro`、`foc_controller`、`three_invertor`、`motor`、`measure`、`scope`，再总装 all-in 模型。
+- FOC 子系统当前为双 S-Function 架构：`Speed Core (sfun_speed_controller)` 负责速度环，`FOC Core (sfun_foc_controller)` 负责电流环与调制。
+- `speed_ref` 仅进入速度环；current-core 输入宽度为 7（不含 `speed_ref`），对话框参数为 15 个（电流环必需字段 + 手动 PI + `auto_tune_current` 开关）。
 - `motor` 模块当前主实现是 Simscape Electrical 内置 PMSM 块与配套传感器链路。
 - C++ 控制核心提供无状态函数接口和有状态类接口，两者都使用基于电机参数的 PI 自动整定逻辑。
 - `setup_project.m` 现在除了加路径，还会打印推荐入口，并支持 `setup_project('compare')` 直接打开一阶对象带宽对比 UI。

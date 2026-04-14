@@ -20,6 +20,7 @@
 
 - 电流环：`Kp_id`、`Ki_id`、`Kp_iq`、`Ki_iq`
 - 速度环：`Kp_speed`、`Ki_speed`
+- 开关：`auto_tune_current`、`auto_tune_speed`、`enable_internal_speed_loop`
 - 电机参数：`Rs`、`Ld`、`Lq`、`flux_pm`、`pole_pairs`、`J`、`B`
 - 自动整定带宽：`omega_ci`、`omega_cs`
 - 限幅：`iq_max`、`id_max`
@@ -34,11 +35,15 @@
 - PWM 占空比：`duty_a`、`duty_b`、`duty_c`
 - dq 电流测量：`id_meas`、`iq_meas`
 - dq 电压输出：`vd`、`vq`
-- 速度环输出：`iq_ref`
+- 电流环执行时实际使用的 `iq_ref`（已限幅）
 
 ## 自动整定逻辑
 
-当前代码会优先调用 `derive_pi_gains_from_motor`，按电机参数和目标带宽推导 PI 增益。
+当前代码会通过 `derive_pi_gains_from_motor` 按开关进行 PI 自动整定：
+
+- `auto_tune_current = true` 时，更新电流环 PI。
+- `auto_tune_speed = true` 时，更新速度环 PI。
+- 关闭自动整定时，保留用户手工设置的 PI 参数。
 
 电流环设计：
 
@@ -85,70 +90,72 @@ $$
 
 即控制器零点放在 $-\omega_e$，与一阶 RL 对象极点对齐。
 
-## 两类控制接口
+## 控制接口分层
 
-### 无状态接口
+### 无状态速度环接口
 
-函数：`foc_controller_step(...)`
+函数：`speed_controller_step(...)`
 
 主要用途：
 
-- S-Function 集成
-- 需要外部维护积分状态的调用场景
+- 速度环独立计算 `iq_ref`
+- 需要外部维护 `integral_speed` 的场景（如 speed-core S-Function）
 
-输入：
+输入：`speed_ref`、`omega_m`、`integral_speed`、`FOCConfig`
 
-- 三相电流：`ia`、`ib`、`ic`
-- 电角度与机械角速度：`theta_e`、`omega_m`
-- 参考量：`speed_ref`、`id_ref`、`torque_ref`
-- 外部维护的积分状态：`integral_id`、`integral_iq`、`integral_speed`
-- 配置：`FOCConfig`
+### 无状态电流环接口
 
-实现特征：
+函数：`current_controller_step(...)`
 
-- 每步先对配置做自动整定。
-- 速度环先输出 `iq_ref`，并带限幅与抗积分饱和回算。
-- `torque_ref` 会按电机转矩常数在线换算为附加 `iq_ref`，再与速度环输出叠加后统一限幅。
-- 电流环执行 dq PI 调节并叠加交叉耦合前馈。
-- 电压矢量按 `Vdc / sqrt(3)` 做幅值限幅。
-- 最后经 inverse Park 和 SVPWM 输出三相占空比。
+主要用途：
+
+- 电流环独立执行 dq PI、解耦前馈、限压和 SVPWM
+- 需要外部维护 `integral_id`、`integral_iq` 的场景（如 current-core S-Function）
+
+输入：`ia`、`ib`、`ic`、`theta_e`、`omega_m`、`id_ref`、`iq_ref`、积分状态、`FOCConfig`
+
+### 无状态兼容接口
+
+函数：`foc_controller_step(...)`
+
+用途：兼容旧调用路径，内部根据 `enable_internal_speed_loop` 选择组合方式。
+
+- 当 `enable_internal_speed_loop = true`：执行“速度环 + 转矩前馈 + 电流环”的组合流程。
+- 当 `enable_internal_speed_loop = false`：把 `torque_ref` 入参按外部 `iq_ref` 解释，再直接走电流环。
 
 ### 有状态接口
 
 类：`FOCController`
 
-主要用途：
-
-- Python 绑定
-- 直接 C++ 调用
-
 公开方法：
 
 - `configure(const FOCConfig&)`
 - `step(ia, ib, ic, theta_e, omega_m, speed_ref, id_ref, torque_ref=0)`
+- `step_speed(speed_ref, omega_m)`
+- `step_current(ia, ib, ic, theta_e, omega_m, id_ref, iq_ref)`
 - `reset()`
 - `config() const`
 
 实现特征：
 
 - 内部维护 `pi_id_`、`pi_iq_`、`pi_speed_` 三个 `PIController`。
-- `configure()` 时会先自动整定，再把 PI 参数和输出限幅写入三个控制器。
-- 速度环限幅是 `[-iq_max, iq_max]`。
-- 电流环 PI 输出限幅是 `[-Vdc, Vdc]`，之后仍会再经过电压矢量幅值限制。
+- `configure()` 会先按开关执行自动整定，再下发 PI 与限幅参数。
+- 速度环输出限幅为 `[-iq_max, iq_max]`。
+- 电流环 PI 输出限幅为 `[-Vdc, Vdc]`，随后仍有电压矢量幅值限制。
 
 ## 算法主流程
 
-一次 `step` 的执行顺序可以概括为：
+### 推荐分环流程（当前 Simulink 主路径）
 
-1. `abc -> alpha-beta` 的 Clarke 变换。
-2. `alpha-beta -> dq` 的 Park 变换。
-3. 速度环产生基础 `iq_ref`。
-4. 将 `torque_ref` 在线换算为附加 `iq_ref` 并叠加后限幅。
-5. d 轴和 q 轴 PI 产生 `vd`、`vq`。
-6. 叠加解耦前馈项。
-7. 进行电压矢量限幅。
-8. inverse Park 回到 `alpha-beta`。
-9. SVPWM 生成 `duty_a`、`duty_b`、`duty_c`。
+1. 速度环通过 `speed_controller_step` 产生 `iq_ref_speed`。
+2. 外部前馈 `iq_ref_cmd` 与 `iq_ref_speed` 相加并限幅。
+3. 电流环通过 `current_controller_step` 执行 `abc->dq`、PI、解耦、限压、SVPWM。
+
+### 兼容流程（单入口）
+
+1. `foc_controller_step` 判断 `enable_internal_speed_loop`。
+2. 若开启内部速度环，则内部合成 `iq_ref`；若关闭，则使用外部 `iq_ref`。
+3. 统一进入 `current_controller_step` 输出占空比与测量值。
 
 ## 变换与调制接口
 
@@ -160,7 +167,7 @@ $$
 
 ## 当前限制与实现差异
 
-- `id_max` 目前是配置字段，但在主控制流程中还没有看到与 `iq_max` 对称的显式 d 轴限幅逻辑。
+- `current_controller_step` 里已对 `id_ref` 和 `iq_ref` 都做了对称限幅；但兼容入口 `foc_controller_step` 第 8 个入参仍命名为 `torque_ref`，在关闭内部速度环时语义实际是外部 `iq_ref`，需要调用方明确约定。
 - 无状态接口对速度环有显式抗饱和回算；有状态接口则依赖 `PIController` 的内部限幅行为。
 - 当前自动整定默认假设 $K_t = 1.5p\psi_f$，更复杂的磁阻转矩项并未进入默认 PI 推导。
 

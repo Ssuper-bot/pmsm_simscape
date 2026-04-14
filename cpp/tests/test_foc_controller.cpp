@@ -101,7 +101,60 @@ void test_foc_controller_class() {
         auto out = ctrl.step(0, 0, 0, 0, 0, 100.0, 0, 0.0);
         assert(out.duty_a >= 0.0 && out.duty_a <= 1.0);
     }
+
+    const double iq_from_speed = ctrl.step_speed(100.0, 0.0);
+    assert(iq_from_speed >= -config.iq_max && iq_from_speed <= config.iq_max);
+
+    auto out_current = ctrl.step_current(0, 0, 0, 0, 0, 0.0, 1.0);
+    assert(approx_eq(out_current.iq_ref, 1.0, 1e-9));
     printf("  FOC Controller Class: PASS\n");
+}
+
+void test_separated_speed_and_current_steps() {
+    pmsm::FOCConfig config;
+    config.Ts = 1e-3;
+    config.Vdc = 24.0;
+    config.iq_max = 3.0;
+    config.auto_tune_speed = false;
+    config.Kp_speed = 2.0;
+    config.Ki_speed = 0.0;
+
+    double int_speed = 0.0;
+    const double iq_from_speed = pmsm::speed_controller_step(1.0, 0.0, int_speed, config);
+    assert(approx_eq(iq_from_speed, 2.0, 1e-12));
+
+    double int_id = 0.0;
+    double int_iq = 0.0;
+    auto out = pmsm::current_controller_step(
+        0.0, 0.0, 0.0,
+        0.0, 0.0,
+        0.0, 2.0,
+        int_id, int_iq,
+        config);
+    assert(approx_eq(out.iq_ref, 2.0, 1e-12));
+    printf("  Separated speed/current steps: PASS\n");
+}
+
+void test_external_iq_mode() {
+    pmsm::FOCConfig config;
+    config.Ts = 50e-6;
+    config.Vdc = 24.0;
+    config.enable_internal_speed_loop = false;
+
+    double int_id = 0.0;
+    double int_iq = 0.0;
+    double int_speed = 0.0;
+
+    auto out = pmsm::foc_controller_step(
+        0.0, 0.0, 0.0,
+        0.0, 0.0,
+        1000.0, 0.0, 1.5,
+        int_id, int_iq, int_speed,
+        config);
+
+    assert(approx_eq(out.iq_ref, 1.5, 1e-9));
+    assert(approx_eq(int_speed, 0.0, 1e-12));
+    printf("  External iq mode: PASS\n");
 }
 
 void test_torque_to_iq_reference() {
@@ -145,6 +198,28 @@ void test_motor_based_pi_derivation() {
     printf("  Motor-based PI derivation: PASS\n");
 }
 
+void test_manual_pi_preserved_when_auto_tune_disabled() {
+    pmsm::FOCConfig config;
+    config.auto_tune_current = false;
+    config.auto_tune_speed = false;
+    config.Kp_id = 11.0;
+    config.Ki_id = 22.0;
+    config.Kp_iq = 33.0;
+    config.Ki_iq = 44.0;
+    config.Kp_speed = 55.0;
+    config.Ki_speed = 66.0;
+
+    const auto tuned = pmsm::derive_pi_gains_from_motor(config);
+
+    assert(approx_eq(tuned.Kp_id, 11.0, 1e-12));
+    assert(approx_eq(tuned.Ki_id, 22.0, 1e-12));
+    assert(approx_eq(tuned.Kp_iq, 33.0, 1e-12));
+    assert(approx_eq(tuned.Ki_iq, 44.0, 1e-12));
+    assert(approx_eq(tuned.Kp_speed, 55.0, 1e-12));
+    assert(approx_eq(tuned.Ki_speed, 66.0, 1e-12));
+    printf("  Manual PI preservation: PASS\n");
+}
+
 int main() {
     printf("Running FOC Controller Tests...\n");
     test_clarke_transform();
@@ -154,7 +229,10 @@ int main() {
     test_pi_controller();
     test_foc_controller_step();
     test_foc_controller_class();
+    test_separated_speed_and_current_steps();
+    test_external_iq_mode();
     test_motor_based_pi_derivation();
+    test_manual_pi_preserved_when_auto_tune_disabled();
     test_torque_to_iq_reference();
     printf("All tests PASSED.\n");
     return 0;

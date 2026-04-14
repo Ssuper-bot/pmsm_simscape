@@ -61,6 +61,25 @@ make -j
 - 查看 PWM 输出生成：看 `svpwm.*`。
 - 想要 Python 集成或快速验证：看 `pybind_module.cpp`（并参见 `python/` 目录）。
 
+## 当前接口分层（FOC）
+
+`foc_controller.*` 当前同时提供三层接口：
+
+- 速度环无状态接口：`speed_controller_step(...)`
+- 电流环无状态接口：`current_controller_step(...)`
+- 兼容单入口接口：`foc_controller_step(...)`
+
+有状态类 `FOCController` 对应提供：
+
+- `step_speed(...)`
+- `step_current(...)`
+- `step(...)`（兼容单入口）
+
+阅读建议：
+
+- 排查分环行为优先看 `speed_controller_step` 与 `current_controller_step`。
+- 仅在兼容旧调用链路时再看 `foc_controller_step` 的组合逻辑。
+
 ## 相关文档
 
 - 构建与验证：./theme_build_and_validation.md

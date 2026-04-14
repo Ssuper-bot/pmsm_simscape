@@ -49,6 +49,9 @@ ctest --output-on-failure
 - PI 控制器步进行为
 - FOC 无状态接口
 - FOC 有状态类接口
+- 速度环与电流环分离接口（`speed_controller_step` / `current_controller_step`）
+- 外部 `iq_ref` 模式（内部速度环关闭）
+- 自动整定关闭时手动 PI 参数保持
 
 ## Python 绑定构建
 
@@ -116,6 +119,7 @@ setup_project('compare')
 
 编译输入包括：
 
+- `matlab/s_function/sfun_speed_controller.cpp`
 - `matlab/s_function/sfun_foc_controller.cpp`
 - `cpp/src/foc_controller.cpp`
 - `cpp/src/transforms.cpp`
@@ -154,9 +158,14 @@ setup_project('compare')
 
 1. 拉起默认参数。
 2. 将参数注入 base workspace。
-3. 强制编译 `sfun_foc_controller` MEX，因为 all-in 模型的 FOC 子系统已改为依赖该 C++ S-Function。
+3. 强制编译 `sfun_speed_controller` 与 `sfun_foc_controller` 两个 MEX，因为 all-in 模型 FOC 子系统采用双 S-Function 架构。
 4. 删除旧的 `matlab/models/pmsm_foc_model.slx`。
 5. 调用 `create_pmsm_foc_all_in_model` 重新生成 all-in 模型。
+
+调参补充：
+
+- 可在 MATLAB base workspace 预先定义 `ctrl_params_override`（以及 `motor_params_override`、`inv_params_override`、`sim_params_override`、`ref_params_override`）后再运行 `pmsm_foc_simscape`。
+- `pmsm_foc_simscape` 会合并 override，并通过 builder 的 `derive_pi_ctrl_params` 重新整理 PI 参数，便于仿真调试时快速切换参数组。
 
 ### 模块化 builder 入口
 

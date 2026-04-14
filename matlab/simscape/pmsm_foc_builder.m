@@ -21,6 +21,15 @@ switch lower(action)
         [model_name, stop_time] = parse_validate_inputs(varargin{:});
         varargout{1} = validate_model(model_name, stop_time);
 
+    case 'derive_pi_ctrl_params'
+        if numel(varargin) < 3
+            error('derive_pi_ctrl_params requires ctrl_params, motor_params, inv_params.');
+        end
+        ctrl_params = varargin{1};
+        motor_params = varargin{2};
+        inv_params = varargin{3};
+        varargout{1} = derive_pi_ctrl_params(ctrl_params, motor_params, inv_params);
+
     otherwise
         error('Unsupported builder action: %s', action);
 end
@@ -109,6 +118,9 @@ ctrl_params.Ki_speed = 0.0;
 ctrl_params.id_max = 10.0;
 ctrl_params.iq_max = 10.0;
 ctrl_params.speed_max = 3000;
+ctrl_params.auto_tune_current = true;
+ctrl_params.auto_tune_speed = true;
+ctrl_params.enable_internal_speed_loop = false;
 
 sim_params = struct();
 sim_params.Ts_control = 1 / inv_params.fsw;
@@ -124,9 +136,10 @@ ref_params.speed_ramp_time = 0.1;
 ref_params.load_torque = 0.1;
 ref_params.load_step_time = 0.3;
 ref_params.id_ref = 0;
-ref_params.throttle = 0.2;
+ref_params.throttle = 0.0;
 ref_params.throttle_speed_kp = 0.05;
 ref_params.throttle_torque_max = 0.8;
+ref_params.throttle_iq_max = ctrl_params.iq_max;
 
 ctrl_params = derive_pi_ctrl_params(ctrl_params, motor_params, inv_params);
 end
@@ -154,19 +167,19 @@ switch char(module_name)
 
     case 'thro'
         add_block('built-in/Subsystem', [model_name '/Thro']);
-        create_thro_subsystem([model_name '/Thro'], ref_params);
+        create_thro_subsystem([model_name '/Thro'], ref_params, ctrl_params);
         set_param([model_name '/Thro'], 'Position', [250 110 500 310]);
 
         add_constant_source(model_name, 'CurrentSpeed', '0.0', [40 120 105 140]);
         add_step_source(model_name, 'TargetSpeed', '0.001', '0', num2str(ref_params.speed_ref), [25 175 105 205]);
         add_constant_source(model_name, 'Throttle', num2str(ref_params.throttle), [40 235 105 255]);
 
-        add_scope_block([model_name '/Torque Ref Scope'], [590 175 680 215]);
+        add_scope_block([model_name '/Iq Ref Scope'], [590 175 680 215]);
 
         add_line(model_name, 'CurrentSpeed/1', 'Thro/1', 'autorouting', 'smart');
         add_line(model_name, 'TargetSpeed/1', 'Thro/2', 'autorouting', 'smart');
         add_line(model_name, 'Throttle/1', 'Thro/3', 'autorouting', 'smart');
-        add_line(model_name, 'Thro/1', 'Torque Ref Scope/1', 'autorouting', 'smart');
+        add_line(model_name, 'Thro/1', 'Iq Ref Scope/1', 'autorouting', 'smart');
 
     case 'foc_controller'
         add_block('built-in/Subsystem', [model_name '/FOC Controller']);
@@ -180,7 +193,7 @@ switch char(module_name)
         add_constant_source(model_name, 'OmegaM', '0.0', [40 245 90 265]);
         add_step_source(model_name, 'SpeedRef', '0.001', '0', num2str(ref_params.speed_ref), [25 290 100 320]);
         add_constant_source(model_name, 'IdRef', num2str(ref_params.id_ref), [40 345 90 365]);
-        add_constant_source(model_name, 'TorqueRef', '0.0', [40 390 100 410]);
+        add_constant_source(model_name, 'IqRef', '0.0', [40 390 100 410]);
 
         add_scope_block([model_name '/Duty Scope'], [650 110 720 150]);
         add_scope_block([model_name '/Id Scope'], [650 190 720 230]);
@@ -193,7 +206,7 @@ switch char(module_name)
         add_line(model_name, 'OmegaM/1', 'FOC Controller/5', 'autorouting', 'smart');
         add_line(model_name, 'SpeedRef/1', 'FOC Controller/6', 'autorouting', 'smart');
         add_line(model_name, 'IdRef/1', 'FOC Controller/7', 'autorouting', 'smart');
-        add_line(model_name, 'TorqueRef/1', 'FOC Controller/8', 'autorouting', 'smart');
+        add_line(model_name, 'IqRef/1', 'FOC Controller/8', 'autorouting', 'smart');
         add_line(model_name, 'FOC Controller/1', 'Duty Scope/1', 'autorouting', 'smart');
         add_line(model_name, 'FOC Controller/2', 'Id Scope/1', 'autorouting', 'smart');
         add_line(model_name, 'FOC Controller/3', 'Iq Scope/1', 'autorouting', 'smart');
@@ -292,7 +305,7 @@ create_signal_in_subsystem([model_name '/Signal In'], ref_params);
 set_param([model_name '/Signal In'], 'Position', [60 90 240 250]);
 
 add_block('built-in/Subsystem', [model_name '/Thro']);
-create_thro_subsystem([model_name '/Thro'], ref_params);
+create_thro_subsystem([model_name '/Thro'], ref_params, ctrl_params);
 set_param([model_name '/Thro'], 'Position', [300 430 560 620]);
 
 add_block('built-in/Subsystem', [model_name '/FOC Controller']);
@@ -350,6 +363,18 @@ save_generated_model(model_name, model_path);
 end
 
 function ctrl_params = derive_pi_ctrl_params(ctrl_params, motor_params, inv_params)
+if ~isfield(ctrl_params, 'auto_tune_current') || isempty(ctrl_params.auto_tune_current)
+    ctrl_params.auto_tune_current = true;
+end
+
+if ~isfield(ctrl_params, 'auto_tune_speed') || isempty(ctrl_params.auto_tune_speed)
+    ctrl_params.auto_tune_speed = true;
+end
+
+if ~isfield(ctrl_params, 'enable_internal_speed_loop') || isempty(ctrl_params.enable_internal_speed_loop)
+    ctrl_params.enable_internal_speed_loop = true;
+end
+
 if ~isfield(ctrl_params, 'omega_ci') || isempty(ctrl_params.omega_ci) || ctrl_params.omega_ci <= 0
     omega_ci = 2*pi*(inv_params.fsw / 10.0);
 else
@@ -369,19 +394,23 @@ Rs = max(motor_params.Rs, 1e-12);
 Ld = max(motor_params.Ld, 1e-12);
 Lq = max(motor_params.Lq, 1e-12);
 
-% Current-loop PI: zero cancels electrical pole at Rs/L.
-ctrl_params.Kp_id = Ld * omega_ci;
-ctrl_params.Ki_id = Rs * omega_ci;
-ctrl_params.Kp_iq = Lq * omega_ci;
-ctrl_params.Ki_iq = Rs * omega_ci;
+if ctrl_params.auto_tune_current
+    % Current-loop PI: zero cancels electrical pole at Rs/L.
+    ctrl_params.Kp_id = Ld * omega_ci;
+    ctrl_params.Ki_id = Rs * omega_ci;
+    ctrl_params.Kp_iq = Lq * omega_ci;
+    ctrl_params.Ki_iq = Rs * omega_ci;
+end
 
 J = max(motor_params.J, 1e-12);
 B = max(motor_params.B, 1e-12);
 Kt = max(1.5 * motor_params.p * motor_params.flux_pm, 1e-12);
 
 % Speed-loop PI: zero cancels mechanical pole at B/J.
-ctrl_params.Kp_speed = (J * omega_cs) / Kt;
-ctrl_params.Ki_speed = (B * omega_cs) / Kt;
+if ctrl_params.auto_tune_speed
+    ctrl_params.Kp_speed = (J * omega_cs) / Kt;
+    ctrl_params.Ki_speed = (B * omega_cs) / Kt;
+end
 end
 
 function result = validate_model(model_name, stop_time)
@@ -539,7 +568,7 @@ add_block('built-in/Inport', [subsys '/theta_e'], 'Port', '4');
 add_block('built-in/Inport', [subsys '/omega_m'], 'Port', '5');
 add_block('built-in/Inport', [subsys '/speed_ref'], 'Port', '6');
 add_block('built-in/Inport', [subsys '/id_ref'], 'Port', '7');
-add_block('built-in/Inport', [subsys '/torque_ref'], 'Port', '8');
+add_block('built-in/Inport', [subsys '/iq_ref_cmd'], 'Port', '8');
 
 add_block('built-in/Outport', [subsys '/duty_abc'], 'Port', '1');
 add_block('built-in/Outport', [subsys '/id_meas'], 'Port', '2');
@@ -551,24 +580,47 @@ else
     Ts_control = 1 / inv_params.fsw;
 end
 
+speed_sfun_params = strjoin({ ...
+    num2str(Ts_control, '%.16g'), ...
+    num2str(ctrl_params.Kp_speed, '%.16g'), ...
+    num2str(ctrl_params.Ki_speed, '%.16g'), ...
+    num2str(ctrl_params.iq_max, '%.16g') ...
+}, ', ');
+
 sfun_params = strjoin({ ...
     num2str(Ts_control, '%.16g'), ...
     num2str(inv_params.Vdc, '%.16g'), ...
     num2str(ctrl_params.omega_ci, '%.16g'), ...
-    num2str(ctrl_params.omega_cs, '%.16g'), ...
     num2str(motor_params.Rs, '%.16g'), ...
     num2str(motor_params.Ld, '%.16g'), ...
     num2str(motor_params.Lq, '%.16g'), ...
     num2str(motor_params.flux_pm, '%.16g'), ...
     num2str(motor_params.p, '%.16g'), ...
-    num2str(motor_params.J, '%.16g'), ...
-    num2str(motor_params.B, '%.16g'), ...
     num2str(ctrl_params.iq_max, '%.16g'), ...
-    num2str(ctrl_params.id_max, '%.16g') ...
+    num2str(ctrl_params.id_max, '%.16g'), ...
+    num2str(ctrl_params.Kp_id, '%.16g'), ...
+    num2str(ctrl_params.Ki_id, '%.16g'), ...
+    num2str(ctrl_params.Kp_iq, '%.16g'), ...
+    num2str(ctrl_params.Ki_iq, '%.16g'), ...
+    num2str(ctrl_params.auto_tune_current, '%.16g') ...
 }, ', ');
 
+add_block('simulink/Signal Routing/Mux', [subsys '/Mux_speed_inputs'], ...
+    'Inputs', '2', 'Position', [128 220 133 280]);
+add_block('simulink/User-Defined Functions/S-Function', [subsys '/Speed Core'], ...
+    'FunctionName', 'sfun_speed_controller', ...
+    'Parameters', speed_sfun_params, ...
+    'Position', [185 230 320 280]);
+add_block('simulink/Math Operations/Sum', [subsys '/Iq Sum'], ...
+    'Inputs', '++', ...
+    'Position', [355 242 380 268]);
+add_block('simulink/Discontinuities/Saturation', [subsys '/Iq Ref Sat'], ...
+    'UpperLimit', num2str(ctrl_params.iq_max, '%.16g'), ...
+    'LowerLimit', num2str(-ctrl_params.iq_max, '%.16g'), ...
+    'Position', [410 235 475 275]);
+
 add_block('simulink/Signal Routing/Mux', [subsys '/Mux_inputs'], ...
-    'Inputs', '8', 'Position', [135 68 140 252]);
+    'Inputs', '7', 'Position', [135 68 140 252]);
 add_block('simulink/User-Defined Functions/S-Function', [subsys '/FOC Core'], ...
     'FunctionName', 'sfun_foc_controller', ...
     'Parameters', sfun_params, ...
@@ -583,9 +635,14 @@ add_line(subsys, 'ib/1', 'Mux_inputs/2');
 add_line(subsys, 'ic/1', 'Mux_inputs/3');
 add_line(subsys, 'theta_e/1', 'Mux_inputs/4');
 add_line(subsys, 'omega_m/1', 'Mux_inputs/5');
-add_line(subsys, 'speed_ref/1', 'Mux_inputs/6');
-add_line(subsys, 'id_ref/1', 'Mux_inputs/7');
-add_line(subsys, 'torque_ref/1', 'Mux_inputs/8');
+add_line(subsys, 'id_ref/1', 'Mux_inputs/6');
+add_line(subsys, 'speed_ref/1', 'Mux_speed_inputs/1');
+add_line(subsys, 'omega_m/1', 'Mux_speed_inputs/2');
+add_line(subsys, 'Mux_speed_inputs/1', 'Speed Core/1');
+add_line(subsys, 'Speed Core/1', 'Iq Sum/1');
+add_line(subsys, 'iq_ref_cmd/1', 'Iq Sum/2');
+add_line(subsys, 'Iq Sum/1', 'Iq Ref Sat/1');
+add_line(subsys, 'Iq Ref Sat/1', 'Mux_inputs/7');
 
 add_line(subsys, 'Mux_inputs/1', 'FOC Core/1');
 add_line(subsys, 'FOC Core/1', 'Demux_outputs/1');
@@ -838,43 +895,40 @@ add_line(subsys, 'Load Step/1', 'Te_load/1');
 add_line(subsys, 'Throttle/1', 'throttle/1');
 end
 
-function create_thro_subsystem(subsys, ref_params)
+function create_thro_subsystem(subsys, ref_params, ctrl_params)
 add_block('built-in/Inport', [subsys '/current_speed'], 'Port', '1');
 add_block('built-in/Inport', [subsys '/target_speed'], 'Port', '2');
 add_block('built-in/Inport', [subsys '/throttle'], 'Port', '3');
 
-add_block('built-in/Outport', [subsys '/torque_ref'], 'Port', '1');
+add_block('built-in/Outport', [subsys '/iq_ref_ff'], 'Port', '1');
 
-add_block('simulink/Math Operations/Gain', [subsys '/RPM2RadS'], ...
-    'Gain', '2*pi/60', ...
-    'Position', [110 85 155 105]);
-add_block('simulink/Math Operations/Sum', [subsys '/Speed Error'], ...
-    'Inputs', '+-', ...
-    'Position', [190 80 220 110]);
-add_block('simulink/Math Operations/Gain', [subsys '/Speed P'], ...
-    'Gain', num2str(ref_params.throttle_speed_kp), ...
-    'Position', [250 80 310 110]);
+if isfield(ref_params, 'throttle_iq_max') && ~isempty(ref_params.throttle_iq_max)
+    iq_max = max(ref_params.throttle_iq_max, 0.0);
+else
+    iq_max = max(ctrl_params.iq_max, 0.0);
+end
 add_block('simulink/Discontinuities/Saturation', [subsys '/Throttle Sat'], ...
     'UpperLimit', '1', ...
     'LowerLimit', '0', ...
-    'Position', [110 165 165 195]);
-add_block('simulink/Math Operations/Product', [subsys '/Throttle Product'], ...
-    'Inputs', '2', ...
-    'Position', [345 105 395 145]);
-add_block('simulink/Discontinuities/Saturation', [subsys '/Torque Sat'], ...
-    'UpperLimit', num2str(ref_params.throttle_torque_max), ...
-    'LowerLimit', '0', ...
-    'Position', [430 115 490 145]);
+    'Position', [110 150 165 180]);
+add_block('simulink/Math Operations/Gain', [subsys '/Throttle2Iq'], ...
+    'Gain', num2str(iq_max, '%.16g'), ...
+    'Position', [220 150 285 180]);
+add_block('simulink/Discontinuities/Saturation', [subsys '/Iq Sat'], ...
+    'UpperLimit', num2str(iq_max), ...
+    'LowerLimit', num2str(-iq_max), ...
+    'Position', [330 145 390 185]);
+add_block('simulink/Sinks/Terminator', [subsys '/UnusedSpeed'], ...
+    'Position', [120 30 140 50]);
+add_block('simulink/Sinks/Terminator', [subsys '/UnusedTarget'], ...
+    'Position', [120 80 140 100]);
 
-add_line(subsys, 'target_speed/1', 'RPM2RadS/1');
-add_line(subsys, 'RPM2RadS/1', 'Speed Error/1');
-add_line(subsys, 'current_speed/1', 'Speed Error/2');
-add_line(subsys, 'Speed Error/1', 'Speed P/1');
-add_line(subsys, 'Speed P/1', 'Throttle Product/1');
+add_line(subsys, 'current_speed/1', 'UnusedSpeed/1');
+add_line(subsys, 'target_speed/1', 'UnusedTarget/1');
 add_line(subsys, 'throttle/1', 'Throttle Sat/1');
-add_line(subsys, 'Throttle Sat/1', 'Throttle Product/2');
-add_line(subsys, 'Throttle Product/1', 'Torque Sat/1');
-add_line(subsys, 'Torque Sat/1', 'torque_ref/1');
+add_line(subsys, 'Throttle Sat/1', 'Throttle2Iq/1');
+add_line(subsys, 'Throttle2Iq/1', 'Iq Sat/1');
+add_line(subsys, 'Iq Sat/1', 'iq_ref_ff/1');
 end
 
 function create_scope_subsystem(subsys)

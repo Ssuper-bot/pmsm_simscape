@@ -1,27 +1,33 @@
 function build_sfun_foc(src_path)
-%BUILD_SFUN_FOC Build the C++ S-Function MEX for FOC controller
+%BUILD_SFUN_FOC Build the C++ S-Function MEX files for split FOC loops
 %
 %   build_sfun_foc(src_path)
 %
-%   Compiles the C++ S-Function (sfun_foc_controller.cpp) into a MEX file
-%   that can be used as an S-Function block in Simulink/Simscape models.
+%   Compiles:
+%   - sfun_speed_controller.cpp (speed loop)
+%   - sfun_foc_controller.cpp   (current loop + modulation)
+%   into MEX files that can be used in Simulink/Simscape models.
 %
 %   The C++ implementation provides:
-%   - Clarke/Park transforms
-%   - PI current/speed controllers
-%   - SVPWM modulation
-%   - Decoupling feedforward
+%   - Dedicated speed-loop S-Function
+%   - Dedicated current-loop S-Function
+%   - Shared C++ control core and modulation logic
 %
 %   Input:
-%       src_path - Path to directory containing sfun_foc_controller.cpp
+%       src_path - Path to directory containing S-Function source files
 
     if nargin < 1
         src_path = fullfile(fileparts(mfilename('fullpath')), '..', 's_function');
     end
     
-    sfun_src = fullfile(src_path, 'sfun_foc_controller.cpp');
-    if ~exist(sfun_src, 'file')
-        error('S-Function source not found: %s', sfun_src);
+    speed_sfun_src = fullfile(src_path, 'sfun_speed_controller.cpp');
+    current_sfun_src = fullfile(src_path, 'sfun_foc_controller.cpp');
+
+    if ~exist(speed_sfun_src, 'file')
+        error('Speed-loop S-Function source not found: %s', speed_sfun_src);
+    end
+    if ~exist(current_sfun_src, 'file')
+        error('Current-loop S-Function source not found: %s', current_sfun_src);
     end
     
     % C++ core algorithm sources
@@ -29,22 +35,17 @@ function build_sfun_foc(src_path)
     cpp_include = fullfile(cpp_core_dir, 'include');
     cpp_src = fullfile(cpp_core_dir, 'src');
     
-    % Source files to compile
-    src_files = {
-        sfun_src, ...
+    common_core_files = {
         fullfile(cpp_src, 'foc_controller.cpp'), ...
         fullfile(cpp_src, 'transforms.cpp'), ...
         fullfile(cpp_src, 'pid_controller.cpp'), ...
         fullfile(cpp_src, 'svpwm.cpp')
     };
-    
-    % Filter to only existing files
-    existing_files = {};
-    for i = 1:length(src_files)
-        if exist(src_files{i}, 'file')
-            existing_files{end+1} = src_files{i}; %#ok<AGROW>
-        end
-    end
+
+    targets = {
+        struct('name', 'sfun_speed_controller', 'src', speed_sfun_src), ...
+        struct('name', 'sfun_foc_controller', 'src', current_sfun_src)
+    };
     
     % MEX compile options
     mex_opts = {
@@ -56,18 +57,34 @@ function build_sfun_foc(src_path)
     
     % Output directory
     out_dir = src_path;
-    
-    fprintf('Compiling S-Function MEX:\n');
-    for i = 1:length(existing_files)
-        fprintf('  Source: %s\n', existing_files{i});
+
+    for t = 1:numel(targets)
+        target = targets{t};
+        src_files = [{target.src}, common_core_files];
+
+        existing_files = {};
+        for i = 1:length(src_files)
+            if exist(src_files{i}, 'file')
+                existing_files{end+1} = src_files{i}; %#ok<AGROW>
+            end
+        end
+
+        fprintf('Compiling %s MEX:\n', target.name);
+        for i = 1:length(existing_files)
+            fprintf('  Source: %s\n', existing_files{i});
+        end
+        fprintf('  Include: %s\n', cpp_include);
+        fprintf('  Output: %s\n', out_dir);
+
+        mex(mex_opts{:}, '-output', target.name, '-outdir', out_dir, existing_files{:});
+
+        mex_out = fullfile(out_dir, [target.name '.' mexext]);
+        if ~exist(mex_out, 'file')
+            error('MEX compilation did not produce expected output: %s', mex_out);
+        end
     end
-    fprintf('  Include: %s\n', cpp_include);
-    fprintf('  Output: %s\n', out_dir);
-    
-    % Compile
-    mex(mex_opts{:}, '-outdir', out_dir, existing_files{:});
-    
-    fprintf('MEX compilation successful.\n');
+
+    fprintf('S-Function MEX compilation successful (speed + current).\n');
     
     % Add to path
     addpath(out_dir);
