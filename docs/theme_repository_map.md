@@ -100,3 +100,4 @@ Python 包内部职责：
 - 仿真体系：./theme_simscape_simulation.md
 - 构建验证：./theme_build_and_validation.md
 - Python / ROS2：./theme_python_ros2_integration.md
+- C++ 源代码概览：./cpp_overview.md

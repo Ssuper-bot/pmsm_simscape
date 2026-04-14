@@ -17,6 +17,7 @@
 - Python 与 ROS2 集成：./theme_python_ros2_integration.md
 - 构建与验证流程：./theme_build_and_validation.md
 - 仓库结构速览：./theme_repository_map.md
+- C++ 源代码概览：./cpp_overview.md
 
 ## 推荐阅读路径
 
