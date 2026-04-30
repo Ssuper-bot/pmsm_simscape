@@ -137,6 +137,7 @@ ref_params.load_torque = 0.1;
 ref_params.load_step_time = 0.3;
 ref_params.id_ref = 0;
 ref_params.throttle = 0.0;
+ref_params.use_external_inputs = false;
 ref_params.throttle_speed_kp = 0.05;
 ref_params.throttle_torque_max = 0.8;
 ref_params.throttle_iq_max = ctrl_params.iq_max;
@@ -155,10 +156,20 @@ switch char(module_name)
         create_signal_in_subsystem([model_name '/Signal In'], ref_params);
         set_param([model_name '/Signal In'], 'Position', [120 80 300 240]);
 
+        add_ramp_source(model_name, 'CmdSpeedRef', num2str(ref_params.speed_ref / max(ref_params.speed_ramp_time, 1e-6), '%.16g'), [20 70 95 100]);
+        add_constant_source(model_name, 'CmdIdRef', num2str(ref_params.id_ref, '%.16g'), [20 120 95 140]);
+        add_step_source(model_name, 'CmdLoad', num2str(ref_params.load_step_time, '%.16g'), '0', num2str(ref_params.load_torque, '%.16g'), [10 165 95 195]);
+        add_constant_source(model_name, 'CmdThrottle', num2str(ref_params.throttle, '%.16g'), [20 215 95 235]);
+
         add_scope_block([model_name '/Speed Ref Scope'], [430 80 500 120]);
         add_scope_block([model_name '/Id Ref Scope'], [430 145 500 185]);
         add_scope_block([model_name '/Load Scope'], [430 210 500 250]);
         add_scope_block([model_name '/Throttle Scope'], [430 275 520 315]);
+
+        add_line(model_name, 'CmdSpeedRef/1', 'Signal In/1', 'autorouting', 'smart');
+        add_line(model_name, 'CmdIdRef/1', 'Signal In/2', 'autorouting', 'smart');
+        add_line(model_name, 'CmdLoad/1', 'Signal In/3', 'autorouting', 'smart');
+        add_line(model_name, 'CmdThrottle/1', 'Signal In/4', 'autorouting', 'smart');
 
         add_line(model_name, 'Signal In/1', 'Speed Ref Scope/1', 'autorouting', 'smart');
         add_line(model_name, 'Signal In/2', 'Id Ref Scope/1', 'autorouting', 'smart');
@@ -183,7 +194,7 @@ switch char(module_name)
 
     case 'foc_controller'
         add_block('built-in/Subsystem', [model_name '/FOC Controller']);
-        create_foc_controller_subsystem([model_name '/FOC Controller'], ctrl_params, inv_params, motor_params);
+        create_foc_controller_subsystem([model_name '/FOC Controller'], ctrl_params, inv_params, motor_params, sim_params);
         set_param([model_name '/FOC Controller'], 'Position', [280 80 560 390]);
 
         add_constant_source(model_name, 'Ia', '0.0', [40 60 90 80]);
@@ -194,6 +205,15 @@ switch char(module_name)
         add_step_source(model_name, 'SpeedRef', '0.001', '0', num2str(ref_params.speed_ref), [25 290 100 320]);
         add_constant_source(model_name, 'IdRef', num2str(ref_params.id_ref), [40 345 90 365]);
         add_constant_source(model_name, 'IqRef', '0.0', [40 390 100 410]);
+        add_constant_source(model_name, 'KpSpeedRt', num2str(ctrl_params.Kp_speed, '%.16g'), [25 430 105 450]);
+        add_constant_source(model_name, 'KiSpeedRt', num2str(ctrl_params.Ki_speed, '%.16g'), [25 470 105 490]);
+        add_constant_source(model_name, 'IqMaxSpeedRt', num2str(ctrl_params.iq_max, '%.16g'), [15 510 110 530]);
+        add_constant_source(model_name, 'KpIdRt', num2str(ctrl_params.Kp_id, '%.16g'), [140 430 220 450]);
+        add_constant_source(model_name, 'KiIdRt', num2str(ctrl_params.Ki_id, '%.16g'), [140 470 220 490]);
+        add_constant_source(model_name, 'KpIqRt', num2str(ctrl_params.Kp_iq, '%.16g'), [140 510 220 530]);
+        add_constant_source(model_name, 'KiIqRt', num2str(ctrl_params.Ki_iq, '%.16g'), [140 550 220 570]);
+        add_constant_source(model_name, 'IdMaxRt', num2str(ctrl_params.id_max, '%.16g'), [240 470 320 490]);
+        add_constant_source(model_name, 'IqMaxRt', num2str(ctrl_params.iq_max, '%.16g'), [240 510 320 530]);
 
         add_scope_block([model_name '/Duty Scope'], [650 110 720 150]);
         add_scope_block([model_name '/Id Scope'], [650 190 720 230]);
@@ -207,6 +227,15 @@ switch char(module_name)
         add_line(model_name, 'SpeedRef/1', 'FOC Controller/6', 'autorouting', 'smart');
         add_line(model_name, 'IdRef/1', 'FOC Controller/7', 'autorouting', 'smart');
         add_line(model_name, 'IqRef/1', 'FOC Controller/8', 'autorouting', 'smart');
+        add_line(model_name, 'KpSpeedRt/1', 'FOC Controller/9', 'autorouting', 'smart');
+        add_line(model_name, 'KiSpeedRt/1', 'FOC Controller/10', 'autorouting', 'smart');
+        add_line(model_name, 'IqMaxSpeedRt/1', 'FOC Controller/11', 'autorouting', 'smart');
+        add_line(model_name, 'KpIdRt/1', 'FOC Controller/12', 'autorouting', 'smart');
+        add_line(model_name, 'KiIdRt/1', 'FOC Controller/13', 'autorouting', 'smart');
+        add_line(model_name, 'KpIqRt/1', 'FOC Controller/14', 'autorouting', 'smart');
+        add_line(model_name, 'KiIqRt/1', 'FOC Controller/15', 'autorouting', 'smart');
+        add_line(model_name, 'IdMaxRt/1', 'FOC Controller/16', 'autorouting', 'smart');
+        add_line(model_name, 'IqMaxRt/1', 'FOC Controller/17', 'autorouting', 'smart');
         add_line(model_name, 'FOC Controller/1', 'Duty Scope/1', 'autorouting', 'smart');
         add_line(model_name, 'FOC Controller/2', 'Id Scope/1', 'autorouting', 'smart');
         add_line(model_name, 'FOC Controller/3', 'Iq Scope/1', 'autorouting', 'smart');
@@ -304,13 +333,28 @@ add_block('built-in/Subsystem', [model_name '/Signal In']);
 create_signal_in_subsystem([model_name '/Signal In'], ref_params);
 set_param([model_name '/Signal In'], 'Position', [60 90 240 250]);
 
+add_ramp_source(model_name, 'CmdSpeedRef', num2str(ref_params.speed_ref / max(ref_params.speed_ramp_time, 1e-6), '%.16g'), [20 20 95 50]);
+add_constant_source(model_name, 'CmdIdRef', num2str(ref_params.id_ref, '%.16g'), [20 60 95 80]);
+add_step_source(model_name, 'CmdLoad', num2str(ref_params.load_step_time, '%.16g'), '0', num2str(ref_params.load_torque, '%.16g'), [10 95 95 125]);
+add_constant_source(model_name, 'CmdThrottle', num2str(ref_params.throttle, '%.16g'), [20 135 95 155]);
+
 add_block('built-in/Subsystem', [model_name '/Thro']);
 create_thro_subsystem([model_name '/Thro'], ref_params, ctrl_params);
 set_param([model_name '/Thro'], 'Position', [300 430 560 620]);
 
 add_block('built-in/Subsystem', [model_name '/FOC Controller']);
-create_foc_controller_subsystem([model_name '/FOC Controller'], ctrl_params, inv_params, motor_params);
+create_foc_controller_subsystem([model_name '/FOC Controller'], ctrl_params, inv_params, motor_params, sim_params);
 set_param([model_name '/FOC Controller'], 'Position', [300 80 560 390]);
+
+add_constant_source(model_name, 'KpSpeedRt', num2str(ctrl_params.Kp_speed, '%.16g'), [210 20 290 40]);
+add_constant_source(model_name, 'KiSpeedRt', num2str(ctrl_params.Ki_speed, '%.16g'), [210 50 290 70]);
+add_constant_source(model_name, 'IqMaxSpeedRt', num2str(ctrl_params.iq_max, '%.16g'), [200 80 300 100]);
+add_constant_source(model_name, 'KpIdRt', num2str(ctrl_params.Kp_id, '%.16g'), [210 110 290 130]);
+add_constant_source(model_name, 'KiIdRt', num2str(ctrl_params.Ki_id, '%.16g'), [210 140 290 160]);
+add_constant_source(model_name, 'KpIqRt', num2str(ctrl_params.Kp_iq, '%.16g'), [210 170 290 190]);
+add_constant_source(model_name, 'KiIqRt', num2str(ctrl_params.Ki_iq, '%.16g'), [210 200 290 220]);
+add_constant_source(model_name, 'IdMaxRt', num2str(ctrl_params.id_max, '%.16g'), [210 230 290 250]);
+add_constant_source(model_name, 'IqMaxRt', num2str(ctrl_params.iq_max, '%.16g'), [210 260 290 280]);
 
 add_block('built-in/Subsystem', [model_name '/Three Invertor']);
 create_power_stage([model_name '/Three Invertor'], inv_params);
@@ -324,9 +368,21 @@ add_block('built-in/Subsystem', [model_name '/Measure']);
 create_measurement_subsystem([model_name '/Measure'], motor_params);
 set_param([model_name '/Measure'], 'Position', [930 440 1160 650]);
 
+zoh_ts = num2str(sim_params.Ts_control, '%.16g');
+add_block('simulink/Discrete/Zero-Order Hold', [model_name '/ZOH_ia'], 'SampleTime', zoh_ts, 'Position', [1185 470 1245 490]);
+add_block('simulink/Discrete/Zero-Order Hold', [model_name '/ZOH_ib'], 'SampleTime', zoh_ts, 'Position', [1185 505 1245 525]);
+add_block('simulink/Discrete/Zero-Order Hold', [model_name '/ZOH_ic'], 'SampleTime', zoh_ts, 'Position', [1185 540 1245 560]);
+add_block('simulink/Discrete/Zero-Order Hold', [model_name '/ZOH_theta_e'], 'SampleTime', zoh_ts, 'Position', [1185 575 1245 595]);
+add_block('simulink/Discrete/Zero-Order Hold', [model_name '/ZOH_omega_m'], 'SampleTime', zoh_ts, 'Position', [1185 610 1245 630]);
+
 add_block('built-in/Subsystem', [model_name '/Scope']);
 create_scope_subsystem([model_name '/Scope']);
 set_param([model_name '/Scope'], 'Position', [1270 150 1470 360]);
+
+add_line(model_name, 'CmdSpeedRef/1', 'Signal In/1', 'autorouting', 'smart');
+add_line(model_name, 'CmdIdRef/1', 'Signal In/2', 'autorouting', 'smart');
+add_line(model_name, 'CmdLoad/1', 'Signal In/3', 'autorouting', 'smart');
+add_line(model_name, 'CmdThrottle/1', 'Signal In/4', 'autorouting', 'smart');
 
 add_line(model_name, 'Signal In/1', 'FOC Controller/6', 'autorouting', 'smart');
 add_line(model_name, 'Signal In/2', 'FOC Controller/7', 'autorouting', 'smart');
@@ -334,6 +390,15 @@ add_line(model_name, 'Signal In/3', 'Motor/4', 'autorouting', 'smart');
 add_line(model_name, 'Signal In/1', 'Thro/2', 'autorouting', 'smart');
 add_line(model_name, 'Signal In/4', 'Thro/3', 'autorouting', 'smart');
 add_line(model_name, 'Thro/1', 'FOC Controller/8', 'autorouting', 'smart');
+add_line(model_name, 'KpSpeedRt/1', 'FOC Controller/9', 'autorouting', 'smart');
+add_line(model_name, 'KiSpeedRt/1', 'FOC Controller/10', 'autorouting', 'smart');
+add_line(model_name, 'IqMaxSpeedRt/1', 'FOC Controller/11', 'autorouting', 'smart');
+add_line(model_name, 'KpIdRt/1', 'FOC Controller/12', 'autorouting', 'smart');
+add_line(model_name, 'KiIdRt/1', 'FOC Controller/13', 'autorouting', 'smart');
+add_line(model_name, 'KpIqRt/1', 'FOC Controller/14', 'autorouting', 'smart');
+add_line(model_name, 'KiIqRt/1', 'FOC Controller/15', 'autorouting', 'smart');
+add_line(model_name, 'IdMaxRt/1', 'FOC Controller/16', 'autorouting', 'smart');
+add_line(model_name, 'IqMaxRt/1', 'FOC Controller/17', 'autorouting', 'smart');
 
 add_line(model_name, 'FOC Controller/1', 'Three Invertor/1', 'autorouting', 'smart');
 
@@ -347,12 +412,18 @@ add_line(model_name, 'Motor/3', 'Measure/3', 'autorouting', 'smart');
 add_line(model_name, 'Motor/6', 'Measure/4', 'autorouting', 'smart');
 add_line(model_name, 'Motor/4', 'Measure/5', 'autorouting', 'smart');
 
-add_line(model_name, 'Measure/1', 'FOC Controller/1', 'autorouting', 'smart');
-add_line(model_name, 'Measure/2', 'FOC Controller/2', 'autorouting', 'smart');
-add_line(model_name, 'Measure/3', 'FOC Controller/3', 'autorouting', 'smart');
-add_line(model_name, 'Measure/4', 'FOC Controller/4', 'autorouting', 'smart');
-add_line(model_name, 'Measure/5', 'FOC Controller/5', 'autorouting', 'smart');
-add_line(model_name, 'Measure/5', 'Thro/1', 'autorouting', 'smart');
+add_line(model_name, 'Measure/1', 'ZOH_ia/1', 'autorouting', 'smart');
+add_line(model_name, 'Measure/2', 'ZOH_ib/1', 'autorouting', 'smart');
+add_line(model_name, 'Measure/3', 'ZOH_ic/1', 'autorouting', 'smart');
+add_line(model_name, 'Measure/4', 'ZOH_theta_e/1', 'autorouting', 'smart');
+add_line(model_name, 'Measure/5', 'ZOH_omega_m/1', 'autorouting', 'smart');
+
+add_line(model_name, 'ZOH_ia/1', 'FOC Controller/1', 'autorouting', 'smart');
+add_line(model_name, 'ZOH_ib/1', 'FOC Controller/2', 'autorouting', 'smart');
+add_line(model_name, 'ZOH_ic/1', 'FOC Controller/3', 'autorouting', 'smart');
+add_line(model_name, 'ZOH_theta_e/1', 'FOC Controller/4', 'autorouting', 'smart');
+add_line(model_name, 'ZOH_omega_m/1', 'FOC Controller/5', 'autorouting', 'smart');
+add_line(model_name, 'ZOH_omega_m/1', 'Thro/1', 'autorouting', 'smart');
 
 add_line(model_name, 'Motor/4', 'Scope/1', 'autorouting', 'smart');
 add_line(model_name, 'FOC Controller/2', 'Scope/2', 'autorouting', 'smart');
@@ -560,7 +631,7 @@ add_line(subsys, 'Demux/2', 'Vb/1');
 add_line(subsys, 'Demux/3', 'Vc/1');
 end
 
-function create_foc_controller_subsystem(subsys, ctrl_params, inv_params, motor_params)
+function create_foc_controller_subsystem(subsys, ctrl_params, inv_params, motor_params, sim_params)
 add_block('built-in/Inport', [subsys '/ia'], 'Port', '1');
 add_block('built-in/Inport', [subsys '/ib'], 'Port', '2');
 add_block('built-in/Inport', [subsys '/ic'], 'Port', '3');
@@ -569,19 +640,36 @@ add_block('built-in/Inport', [subsys '/omega_m'], 'Port', '5');
 add_block('built-in/Inport', [subsys '/speed_ref'], 'Port', '6');
 add_block('built-in/Inport', [subsys '/id_ref'], 'Port', '7');
 add_block('built-in/Inport', [subsys '/iq_ref_cmd'], 'Port', '8');
+add_block('built-in/Inport', [subsys '/kp_speed_rt'], 'Port', '9');
+add_block('built-in/Inport', [subsys '/ki_speed_rt'], 'Port', '10');
+add_block('built-in/Inport', [subsys '/iq_max_speed_rt'], 'Port', '11');
+add_block('built-in/Inport', [subsys '/kp_id_rt'], 'Port', '12');
+add_block('built-in/Inport', [subsys '/ki_id_rt'], 'Port', '13');
+add_block('built-in/Inport', [subsys '/kp_iq_rt'], 'Port', '14');
+add_block('built-in/Inport', [subsys '/ki_iq_rt'], 'Port', '15');
+add_block('built-in/Inport', [subsys '/id_max_rt'], 'Port', '16');
+add_block('built-in/Inport', [subsys '/iq_max_rt'], 'Port', '17');
 
 add_block('built-in/Outport', [subsys '/duty_abc'], 'Port', '1');
 add_block('built-in/Outport', [subsys '/id_meas'], 'Port', '2');
 add_block('built-in/Outport', [subsys '/iq_meas'], 'Port', '3');
 
-if isfield(inv_params, 'Tsw') && ~isempty(inv_params.Tsw)
+if isfield(sim_params, 'Ts_control') && ~isempty(sim_params.Ts_control)
+    Ts_control = sim_params.Ts_control;
+elseif isfield(inv_params, 'Tsw') && ~isempty(inv_params.Tsw)
     Ts_control = inv_params.Tsw;
 else
     Ts_control = 1 / inv_params.fsw;
 end
 
+if isfield(sim_params, 'Ts_speed') && ~isempty(sim_params.Ts_speed)
+    Ts_speed = sim_params.Ts_speed;
+else
+    Ts_speed = 10 * Ts_control;
+end
+
 speed_sfun_params = strjoin({ ...
-    num2str(Ts_control, '%.16g'), ...
+    num2str(Ts_speed, '%.16g'), ...
     num2str(ctrl_params.Kp_speed, '%.16g'), ...
     num2str(ctrl_params.Ki_speed, '%.16g'), ...
     num2str(ctrl_params.iq_max, '%.16g') ...
@@ -606,7 +694,7 @@ sfun_params = strjoin({ ...
 }, ', ');
 
 add_block('simulink/Signal Routing/Mux', [subsys '/Mux_speed_inputs'], ...
-    'Inputs', '2', 'Position', [128 220 133 280]);
+    'Inputs', '5', 'Position', [128 205 133 320]);
 add_block('simulink/User-Defined Functions/S-Function', [subsys '/Speed Core'], ...
     'FunctionName', 'sfun_speed_controller', ...
     'Parameters', speed_sfun_params, ...
@@ -620,7 +708,7 @@ add_block('simulink/Discontinuities/Saturation', [subsys '/Iq Ref Sat'], ...
     'Position', [410 235 475 275]);
 
 add_block('simulink/Signal Routing/Mux', [subsys '/Mux_inputs'], ...
-    'Inputs', '7', 'Position', [135 68 140 252]);
+    'Inputs', '13', 'Position', [135 40 140 340]);
 add_block('simulink/User-Defined Functions/S-Function', [subsys '/FOC Core'], ...
     'FunctionName', 'sfun_foc_controller', ...
     'Parameters', sfun_params, ...
@@ -638,11 +726,20 @@ add_line(subsys, 'omega_m/1', 'Mux_inputs/5');
 add_line(subsys, 'id_ref/1', 'Mux_inputs/6');
 add_line(subsys, 'speed_ref/1', 'Mux_speed_inputs/1');
 add_line(subsys, 'omega_m/1', 'Mux_speed_inputs/2');
+add_line(subsys, 'kp_speed_rt/1', 'Mux_speed_inputs/3');
+add_line(subsys, 'ki_speed_rt/1', 'Mux_speed_inputs/4');
+add_line(subsys, 'iq_max_speed_rt/1', 'Mux_speed_inputs/5');
 add_line(subsys, 'Mux_speed_inputs/1', 'Speed Core/1');
 add_line(subsys, 'Speed Core/1', 'Iq Sum/1');
 add_line(subsys, 'iq_ref_cmd/1', 'Iq Sum/2');
 add_line(subsys, 'Iq Sum/1', 'Iq Ref Sat/1');
 add_line(subsys, 'Iq Ref Sat/1', 'Mux_inputs/7');
+add_line(subsys, 'kp_id_rt/1', 'Mux_inputs/8');
+add_line(subsys, 'ki_id_rt/1', 'Mux_inputs/9');
+add_line(subsys, 'kp_iq_rt/1', 'Mux_inputs/10');
+add_line(subsys, 'ki_iq_rt/1', 'Mux_inputs/11');
+add_line(subsys, 'id_max_rt/1', 'Mux_inputs/12');
+add_line(subsys, 'iq_max_rt/1', 'Mux_inputs/13');
 
 add_line(subsys, 'Mux_inputs/1', 'FOC Core/1');
 add_line(subsys, 'FOC Core/1', 'Demux_outputs/1');
@@ -864,13 +961,26 @@ end
 end
 
 function create_signal_in_subsystem(subsys, ref_params)
+if ~isfield(ref_params, 'use_external_inputs') || isempty(ref_params.use_external_inputs)
+    use_external_inputs = false;
+else
+    use_external_inputs = logical(ref_params.use_external_inputs);
+end
+
+speed_ramp_time = max(ref_params.speed_ramp_time, 1e-6);
+
+add_block('built-in/Inport', [subsys '/speed_ref_ext'], 'Port', '1');
+add_block('built-in/Inport', [subsys '/id_ref_ext'], 'Port', '2');
+add_block('built-in/Inport', [subsys '/Te_load_ext'], 'Port', '3');
+add_block('built-in/Inport', [subsys '/throttle_ext'], 'Port', '4');
+
 add_block('built-in/Outport', [subsys '/speed_ref'], 'Port', '1');
 add_block('built-in/Outport', [subsys '/id_ref'], 'Port', '2');
 add_block('built-in/Outport', [subsys '/Te_load'], 'Port', '3');
 add_block('built-in/Outport', [subsys '/throttle'], 'Port', '4');
 
 add_block('simulink/Sources/Ramp', [subsys '/Speed Ramp'], ...
-    'Slope', num2str(ref_params.speed_ref / ref_params.speed_ramp_time), ...
+    'Slope', num2str(ref_params.speed_ref / speed_ramp_time, '%.16g'), ...
     'Position', [50 30 120 60]);
 add_block('simulink/Discontinuities/Saturation', [subsys '/Speed Sat'], ...
     'UpperLimit', num2str(ref_params.speed_ref), ...
@@ -888,11 +998,47 @@ add_block('built-in/Constant', [subsys '/Throttle'], ...
     'Value', num2str(ref_params.throttle), ...
     'Position', [100 235 150 255]);
 
+add_block('built-in/Constant', [subsys '/UseExternalInputs'], ...
+    'Value', num2str(double(use_external_inputs), '%.16g'), ...
+    'Position', [230 270 290 290]);
+
+add_block('simulink/Signal Routing/Switch', [subsys '/Speed Select'], ...
+    'Criteria', 'u2 >= Threshold', ...
+    'Threshold', '0.5', ...
+    'Position', [270 25 320 65]);
+add_block('simulink/Signal Routing/Switch', [subsys '/Id Select'], ...
+    'Criteria', 'u2 >= Threshold', ...
+    'Threshold', '0.5', ...
+    'Position', [270 95 320 135]);
+add_block('simulink/Signal Routing/Switch', [subsys '/Load Select'], ...
+    'Criteria', 'u2 >= Threshold', ...
+    'Threshold', '0.5', ...
+    'Position', [270 165 320 205]);
+add_block('simulink/Signal Routing/Switch', [subsys '/Throttle Select'], ...
+    'Criteria', 'u2 >= Threshold', ...
+    'Threshold', '0.5', ...
+    'Position', [270 230 320 270]);
+
 add_line(subsys, 'Speed Ramp/1', 'Speed Sat/1');
-add_line(subsys, 'Speed Sat/1', 'speed_ref/1');
-add_line(subsys, 'Id Ref/1', 'id_ref/1');
-add_line(subsys, 'Load Step/1', 'Te_load/1');
-add_line(subsys, 'Throttle/1', 'throttle/1');
+add_line(subsys, 'speed_ref_ext/1', 'Speed Select/1');
+add_line(subsys, 'UseExternalInputs/1', 'Speed Select/2');
+add_line(subsys, 'Speed Sat/1', 'Speed Select/3');
+add_line(subsys, 'Speed Select/1', 'speed_ref/1');
+
+add_line(subsys, 'id_ref_ext/1', 'Id Select/1');
+add_line(subsys, 'UseExternalInputs/1', 'Id Select/2');
+add_line(subsys, 'Id Ref/1', 'Id Select/3');
+add_line(subsys, 'Id Select/1', 'id_ref/1');
+
+add_line(subsys, 'Te_load_ext/1', 'Load Select/1');
+add_line(subsys, 'UseExternalInputs/1', 'Load Select/2');
+add_line(subsys, 'Load Step/1', 'Load Select/3');
+add_line(subsys, 'Load Select/1', 'Te_load/1');
+
+add_line(subsys, 'throttle_ext/1', 'Throttle Select/1');
+add_line(subsys, 'UseExternalInputs/1', 'Throttle Select/2');
+add_line(subsys, 'Throttle/1', 'Throttle Select/3');
+add_line(subsys, 'Throttle Select/1', 'throttle/1');
 end
 
 function create_thro_subsystem(subsys, ref_params, ctrl_params)

@@ -11,9 +11,14 @@ end
 
 script_dir = fileparts(mfilename('fullpath'));
 simscape_dir = fullfile(script_dir, '..', 'simscape');
+scripts_dir = fullfile(script_dir, '..', 'scripts');
+sfun_dir = fullfile(script_dir, '..', 's_function');
 addpath(simscape_dir);
+addpath(scripts_dir);
+addpath(sfun_dir);
 
 testCase.TestData.SimscapeDir = simscape_dir;
+testCase.TestData.SFunDir = sfun_dir;
 end
 
 function teardown(testCase)
@@ -53,8 +58,33 @@ all_in_model = 'pmsm_foc_model_test';
 create_pmsm_foc_all_in_model(all_in_model, motor_params, inv_params, ctrl_params, sim_params, ref_params);
 
 assert_simscape_pmsm_present(testCase, [all_in_model '/Motor']);
+ensure_required_sfun_built(testCase.TestData.SFunDir);
 update_and_smoke_sim(all_in_model, min(sim_params.validation_t_end, 1e-3));
 fprintf('  All-in model integration: PASS\n');
+end
+
+function ensure_required_sfun_built(sfun_dir)
+speed_mex = fullfile(sfun_dir, ['sfun_speed_controller.' mexext]);
+current_mex = fullfile(sfun_dir, ['sfun_foc_controller.' mexext]);
+speed_src = fullfile(sfun_dir, 'sfun_speed_controller.cpp');
+current_src = fullfile(sfun_dir, 'sfun_foc_controller.cpp');
+
+need_build = ~isfile(speed_mex) || ~isfile(current_mex);
+if ~need_build
+    speed_src_info = dir(speed_src);
+    current_src_info = dir(current_src);
+    speed_mex_info = dir(speed_mex);
+    current_mex_info = dir(current_mex);
+
+    need_build = speed_src_info.datenum > speed_mex_info.datenum || ...
+        current_src_info.datenum > current_mex_info.datenum;
+end
+
+if ~need_build
+    return;
+end
+
+build_sfun_foc(sfun_dir);
 end
 
 function assert_simscape_pmsm_present(testCase, root_path)

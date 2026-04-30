@@ -5,7 +5,7 @@
  * This S-Function can be used in Simulink/Simscape models to provide
  * Field-Oriented Control of a PMSM motor.
  *
- * Inputs (port 0, width 7):
+ * Inputs (port 0, width 13):
  *   [0] ia        - Phase A current [A]
  *   [1] ib        - Phase B current [A]
  *   [2] ic        - Phase C current [A]
@@ -13,6 +13,12 @@
  *   [4] omega_m   - Mechanical speed [rad/s]
  *   [5] id_ref    - d-axis current reference [A]
  *   [6] iq_ref    - q-axis current reference [A] (from speed loop and feedforward)
+ *   [7] Kp_id     - Runtime d-axis PI Kp (optional; NaN keeps dialog value)
+ *   [8] Ki_id     - Runtime d-axis PI Ki (optional; NaN keeps dialog value)
+ *   [9] Kp_iq     - Runtime q-axis PI Kp (optional; NaN keeps dialog value)
+ *  [10] Ki_iq     - Runtime q-axis PI Ki (optional; NaN keeps dialog value)
+ *  [11] id_max    - Runtime d-axis current limit [A] (optional; <=0 keeps dialog value)
+ *  [12] iq_max    - Runtime q-axis current limit [A] (optional; <=0 keeps dialog value)
  *
  * Outputs (port 0, width 5):
  *   [0] da        - Phase A duty cycle [0,1]
@@ -44,9 +50,10 @@
 
 #include "simstruc.h"
 #include "foc_controller.h"
+#include <cmath>
 
 #define NUM_PARAMS    15
-#define NUM_INPUTS    7
+#define NUM_INPUTS    13
 #define NUM_OUTPUTS   5
 #define NUM_DWORK     2   // integral_id, integral_iq
 
@@ -66,6 +73,28 @@
 #define PARAM_KP_IQ     12
 #define PARAM_KI_IQ     13
 #define PARAM_AUTO_TUNE_CURRENT 14
+
+#define INPUT_IA         0
+#define INPUT_IB         1
+#define INPUT_IC         2
+#define INPUT_THETA_E    3
+#define INPUT_OMEGA_M    4
+#define INPUT_ID_REF     5
+#define INPUT_IQ_REF     6
+#define INPUT_KP_ID      7
+#define INPUT_KI_ID      8
+#define INPUT_KP_IQ      9
+#define INPUT_KI_IQ     10
+#define INPUT_ID_MAX    11
+#define INPUT_IQ_MAX    12
+
+static double finiteOrDefault(double value, double default_value) {
+    return std::isfinite(value) ? value : default_value;
+}
+
+static double positiveFiniteOrDefault(double value, double default_value) {
+    return (std::isfinite(value) && value > 0.0) ? value : default_value;
+}
 
 static double getParam(SimStruct *S, int idx) {
     return mxGetScalar(ssGetSFcnParam(S, idx));
@@ -132,13 +161,13 @@ static void mdlOutputs(SimStruct *S, int_T tid)
     real_T *integral_iq    = (real_T*)ssGetDWork(S, 1);
 
     /* Extract inputs */
-    double ia        = u[0];
-    double ib        = u[1];
-    double ic        = u[2];
-    double theta_e   = u[3];
-    double omega_m   = u[4];
-    double id_ref    = u[5];
-    double iq_ref    = u[6];
+    double ia        = u[INPUT_IA];
+    double ib        = u[INPUT_IB];
+    double ic        = u[INPUT_IC];
+    double theta_e   = u[INPUT_THETA_E];
+    double omega_m   = u[INPUT_OMEGA_M];
+    double id_ref    = u[INPUT_ID_REF];
+    double iq_ref    = u[INPUT_IQ_REF];
 
     /* Get parameters */
     /* Configure FOC controller */
@@ -151,13 +180,23 @@ static void mdlOutputs(SimStruct *S, int_T tid)
     config.Lq        = getParam(S, PARAM_LQ);
     config.flux_pm   = getParam(S, PARAM_FLUX_PM);
     config.pole_pairs = static_cast<int>(getParam(S, PARAM_POLES));
-    config.iq_max    = getParam(S, PARAM_IQ_MAX);
-    config.id_max    = getParam(S, PARAM_ID_MAX);
-    config.Kp_id     = getParam(S, PARAM_KP_ID);
-    config.Ki_id     = getParam(S, PARAM_KI_ID);
-    config.Kp_iq     = getParam(S, PARAM_KP_IQ);
-    config.Ki_iq     = getParam(S, PARAM_KI_IQ);
-    config.auto_tune_current = (getParam(S, PARAM_AUTO_TUNE_CURRENT) != 0.0);
+    const double iq_max_default = positiveFiniteOrDefault(getParam(S, PARAM_IQ_MAX), 10.0);
+    const double id_max_default = positiveFiniteOrDefault(getParam(S, PARAM_ID_MAX), 10.0);
+    config.iq_max = positiveFiniteOrDefault(u[INPUT_IQ_MAX], iq_max_default);
+    config.id_max = positiveFiniteOrDefault(u[INPUT_ID_MAX], id_max_default);
+
+    const double kp_id_rt = u[INPUT_KP_ID];
+    const double ki_id_rt = u[INPUT_KI_ID];
+    const double kp_iq_rt = u[INPUT_KP_IQ];
+    const double ki_iq_rt = u[INPUT_KI_IQ];
+    const bool has_runtime_pi = std::isfinite(kp_id_rt) && std::isfinite(ki_id_rt) &&
+        std::isfinite(kp_iq_rt) && std::isfinite(ki_iq_rt);
+
+    config.Kp_id = finiteOrDefault(kp_id_rt, getParam(S, PARAM_KP_ID));
+    config.Ki_id = finiteOrDefault(ki_id_rt, getParam(S, PARAM_KI_ID));
+    config.Kp_iq = finiteOrDefault(kp_iq_rt, getParam(S, PARAM_KP_IQ));
+    config.Ki_iq = finiteOrDefault(ki_iq_rt, getParam(S, PARAM_KI_IQ));
+    config.auto_tune_current = has_runtime_pi ? false : (getParam(S, PARAM_AUTO_TUNE_CURRENT) != 0.0);
     config.auto_tune_speed = false;
     /* Current-loop S-Function does not run speed control internally. */
     config.enable_internal_speed_loop = false;

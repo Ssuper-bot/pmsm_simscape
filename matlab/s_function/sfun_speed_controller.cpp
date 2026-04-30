@@ -3,9 +3,12 @@
  *
  * Simulink S-Function wrapper for speed-loop PI in the C++ control core.
  *
- * Inputs (port 0, width 2):
+ * Inputs (port 0, width 5):
  *   [0] speed_ref - Speed reference [RPM]
  *   [1] omega_m   - Mechanical speed [rad/s]
+ *   [2] Kp_speed  - Runtime speed-loop Kp
+ *   [3] Ki_speed  - Runtime speed-loop Ki
+ *   [4] iq_max    - Runtime speed-loop current limit [A]
  *
  * Outputs (port 0, width 1):
  *   [0] iq_ref    - q-axis current reference [A]
@@ -22,9 +25,10 @@
 
 #include "simstruc.h"
 #include "foc_controller.h"
+#include <cmath>
 
 #define NUM_PARAMS  4
-#define NUM_INPUTS  2
+#define NUM_INPUTS  5
 #define NUM_OUTPUTS 1
 #define NUM_DWORK   1
 
@@ -32,6 +36,20 @@
 #define PARAM_KP_SPEED  1
 #define PARAM_KI_SPEED  2
 #define PARAM_IQ_MAX    3
+
+#define INPUT_SPEED_REF_RPM 0
+#define INPUT_OMEGA_M       1
+#define INPUT_KP_SPEED      2
+#define INPUT_KI_SPEED      3
+#define INPUT_IQ_MAX        4
+
+static double finiteOrDefault(double value, double default_value) {
+    return std::isfinite(value) ? value : default_value;
+}
+
+static double positiveFiniteOrDefault(double value, double default_value) {
+    return (std::isfinite(value) && value > 0.0) ? value : default_value;
+}
 
 static double getParam(SimStruct *S, int idx) {
     return mxGetScalar(ssGetSFcnParam(S, idx));
@@ -81,16 +99,20 @@ static void mdlOutputs(SimStruct *S, int_T tid)
 
     real_T *integral_speed = (real_T*)ssGetDWork(S, 0);
 
-    const double speed_ref_rpm = u[0];
-    const double omega_m = u[1];
+    const double speed_ref_rpm = u[INPUT_SPEED_REF_RPM];
+    const double omega_m = u[INPUT_OMEGA_M];
 
     const double speed_ref = speed_ref_rpm * (2.0 * 3.14159265358979323846 / 60.0);
 
+    const double kp_default = getParam(S, PARAM_KP_SPEED);
+    const double ki_default = getParam(S, PARAM_KI_SPEED);
+    const double iq_default = positiveFiniteOrDefault(getParam(S, PARAM_IQ_MAX), 10.0);
+
     pmsm::FOCConfig config;
     config.Ts = getParam(S, PARAM_TS);
-    config.Kp_speed = getParam(S, PARAM_KP_SPEED);
-    config.Ki_speed = getParam(S, PARAM_KI_SPEED);
-    config.iq_max = getParam(S, PARAM_IQ_MAX);
+    config.Kp_speed = finiteOrDefault(u[INPUT_KP_SPEED], kp_default);
+    config.Ki_speed = finiteOrDefault(u[INPUT_KI_SPEED], ki_default);
+    config.iq_max = positiveFiniteOrDefault(u[INPUT_IQ_MAX], iq_default);
     config.auto_tune_speed = false;
     config.auto_tune_current = false;
 
