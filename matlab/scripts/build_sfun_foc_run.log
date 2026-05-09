@@ -1,0 +1,28 @@
+MATLAB starting: 30-Apr-2026 16:20:08
+MATLAB version: 25.2.0.3055257 (R2025b) Update 2
+Searching for build_sfun_foc:
+/Users/wangguandi/Documents/pmsm_simscape/matlab/scripts/build_sfun_foc.m
+Calling build_sfun_foc...
+Compiling sfun_speed_controller MEX:
+  Source: /Users/wangguandi/Documents/pmsm_simscape/matlab/s_function/sfun_speed_controller.cpp
+  Source: /Users/wangguandi/Documents/pmsm_simscape/matlab/scripts/../../cpp/src/foc_controller.cpp
+  Source: /Users/wangguandi/Documents/pmsm_simscape/matlab/scripts/../../cpp/src/transforms.cpp
+  Source: /Users/wangguandi/Documents/pmsm_simscape/matlab/scripts/../../cpp/src/pid_controller.cpp
+  Source: /Users/wangguandi/Documents/pmsm_simscape/matlab/scripts/../../cpp/src/svpwm.cpp
+  Include: /Users/wangguandi/Documents/pmsm_simscape/matlab/scripts/../../cpp/include
+  Output: /Users/wangguandi/Documents/pmsm_simscape/matlab/s_function
+使用 'Xcode Clang++' 编译。
+MEX 已成功完成。
+Compiling sfun_foc_controller MEX:
+  Source: /Users/wangguandi/Documents/pmsm_simscape/matlab/s_function/sfun_foc_controller.cpp
+  Source: /Users/wangguandi/Documents/pmsm_simscape/matlab/scripts/../../cpp/src/foc_controller.cpp
+  Source: /Users/wangguandi/Documents/pmsm_simscape/matlab/scripts/../../cpp/src/transforms.cpp
+  Source: /Users/wangguandi/Documents/pmsm_simscape/matlab/scripts/../../cpp/src/pid_controller.cpp
+  Source: /Users/wangguandi/Documents/pmsm_simscape/matlab/scripts/../../cpp/src/svpwm.cpp
+  Include: /Users/wangguandi/Documents/pmsm_simscape/matlab/scripts/../../cpp/include
+  Output: /Users/wangguandi/Documents/pmsm_simscape/matlab/s_function
+使用 'Xcode Clang++' 编译。
+MEX 已成功完成。
+S-Function MEX compilation successful (speed + current).
+Added /Users/wangguandi/Documents/pmsm_simscape/matlab/s_function to MATLAB path.
+BUILD_OK

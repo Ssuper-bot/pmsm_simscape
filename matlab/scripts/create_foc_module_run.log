@@ -1,0 +1,12 @@
+MATLAB starting: 09-May-2026 14:46:10
+Creating module: pmsm_module_foc_controller_generated
+Model saved to: /Users/wangguandi/Documents/pmsm_simscape/matlab/simscape/../models/pmsm_module_foc_controller_generated.slx
+Model saved: /Users/wangguandi/Documents/pmsm_simscape/matlab/simscape/../models/pmsm_module_foc_controller_generated.slx
+Validating model (compile + short sim)
+Validation result:
+    model_name: 'pmsm_module_foc_controller_generated'
+         saved: 1
+      compiled: 1
+     simulated: 1
+       message: 'ok'
+
