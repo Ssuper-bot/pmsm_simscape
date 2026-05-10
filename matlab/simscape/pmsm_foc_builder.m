@@ -105,6 +105,11 @@ inv_params.Vdc = 48;
 inv_params.fsw = 20e3;
 inv_params.Tsw = 1 / inv_params.fsw;
 inv_params.dead_time = 1e-6;
+inv_params.gate_drive_voltage = 10.0;
+inv_params.mosfet_vth = 2.0;
+inv_params.mosfet_rds = 1e-2;
+inv_params.mosfet_goff = 1e-6;
+inv_params.mosfet_diode_vf = 0.8;
 
 ctrl_params = struct();
 ctrl_params.omega_ci = 0.0;
@@ -245,39 +250,97 @@ switch char(module_name)
         create_power_stage([model_name '/Three Invertor'], inv_params);
         set_param([model_name '/Three Invertor'], 'Position', [220 100 410 280]);
 
-        add_constant_source(model_name, 'DutyABC', '[0.60; 0.40; 0.55]', [50 170 145 190]);
+        add_block('built-in/Subsystem', [model_name '/Motor']);
+        create_pmsm_subsystem([model_name '/Motor'], motor_params);
+        set_param([model_name '/Motor'], 'Position', [520 80 760 360]);
+
+        add_block('simulink/Sources/Sine Wave', [model_name '/DutyA'], ...
+            'Amplitude', '0.35', ...
+            'Bias', '0.5', ...
+            'Frequency', '2*pi*50', ...
+            'Phase', '0', ...
+            'Position', [25 120 105 140]);
+        add_block('simulink/Sources/Sine Wave', [model_name '/DutyB'], ...
+            'Amplitude', '0.35', ...
+            'Bias', '0.5', ...
+            'Frequency', '2*pi*50', ...
+            'Phase', '-2*pi/3', ...
+            'Position', [25 165 105 185]);
+        add_block('simulink/Sources/Sine Wave', [model_name '/DutyC'], ...
+            'Amplitude', '0.35', ...
+            'Bias', '0.5', ...
+            'Frequency', '2*pi*50', ...
+            'Phase', '2*pi/3', ...
+            'Position', [25 210 105 230]);
+        add_block('simulink/Signal Routing/Mux', [model_name '/DutyABC'], ...
+            'Inputs', '3', ...
+            'Position', [140 132 145 228]);
+        add_constant_source(model_name, 'LoadIn', '0', [455 245 505 265]);
         add_scope_block([model_name '/Va Scope'], [500 85 570 125]);
         add_scope_block([model_name '/Vb Scope'], [500 155 570 195]);
         add_scope_block([model_name '/Vc Scope'], [500 225 570 265]);
+        add_scope_block([model_name '/Ia Scope'], [840 95 910 135]);
+        add_scope_block([model_name '/Speed Scope'], [840 185 910 225]);
 
+        add_line(model_name, 'DutyA/1', 'DutyABC/1', 'autorouting', 'smart');
+        add_line(model_name, 'DutyB/1', 'DutyABC/2', 'autorouting', 'smart');
+        add_line(model_name, 'DutyC/1', 'DutyABC/3', 'autorouting', 'smart');
         add_line(model_name, 'DutyABC/1', 'Three Invertor/1', 'autorouting', 'smart');
         add_line(model_name, 'Three Invertor/1', 'Va Scope/1', 'autorouting', 'smart');
         add_line(model_name, 'Three Invertor/2', 'Vb Scope/1', 'autorouting', 'smart');
         add_line(model_name, 'Three Invertor/3', 'Vc Scope/1', 'autorouting', 'smart');
+        add_line(model_name, 'LoadIn/1', 'Motor/1', 'autorouting', 'smart');
+        add_line(model_name, 'Motor/1', 'Ia Scope/1', 'autorouting', 'smart');
+        add_line(model_name, 'Motor/4', 'Speed Scope/1', 'autorouting', 'smart');
+        connect_subsystem_conserving_ports(model_name, [model_name '/Three Invertor'], [model_name '/Motor']);
 
     case 'motor'
+        add_block('built-in/Subsystem', [model_name '/Three Invertor']);
+        create_power_stage([model_name '/Three Invertor'], inv_params);
+        set_param([model_name '/Three Invertor'], 'Position', [50 105 240 285]);
+
         add_block('built-in/Subsystem', [model_name '/Motor']);
         create_pmsm_subsystem([model_name '/Motor'], motor_params);
-        set_param([model_name '/Motor'], 'Position', [270 80 500 360]);
+        set_param([model_name '/Motor'], 'Position', [330 80 560 360]);
 
-        add_sine_source(model_name, 'VaIn', num2str(inv_params.Vdc / 4), '2*pi*50', '0', [35 60 115 90]);
-        add_sine_source(model_name, 'VbIn', num2str(inv_params.Vdc / 4), '2*pi*50', '-2*pi/3', [35 120 115 150]);
-        add_sine_source(model_name, 'VcIn', num2str(inv_params.Vdc / 4), '2*pi*50', '2*pi/3', [35 180 115 210]);
-        add_step_source(model_name, 'LoadIn', num2str(ref_params.load_step_time), '0', num2str(ref_params.load_torque), [30 250 115 280]);
+        add_block('simulink/Sources/Sine Wave', [model_name '/DutyA'], ...
+            'Amplitude', '0.35', ...
+            'Bias', '0.5', ...
+            'Frequency', '2*pi*50', ...
+            'Phase', '0', ...
+            'Position', [15 120 95 140]);
+        add_block('simulink/Sources/Sine Wave', [model_name '/DutyB'], ...
+            'Amplitude', '0.35', ...
+            'Bias', '0.5', ...
+            'Frequency', '2*pi*50', ...
+            'Phase', '-2*pi/3', ...
+            'Position', [15 165 95 185]);
+        add_block('simulink/Sources/Sine Wave', [model_name '/DutyC'], ...
+            'Amplitude', '0.35', ...
+            'Bias', '0.5', ...
+            'Frequency', '2*pi*50', ...
+            'Phase', '2*pi/3', ...
+            'Position', [15 210 95 230]);
+        add_block('simulink/Signal Routing/Mux', [model_name '/DutyABC'], ...
+            'Inputs', '3', ...
+            'Position', [125 132 130 228]);
+        add_step_source(model_name, 'LoadIn', num2str(ref_params.load_step_time), '0', num2str(ref_params.load_torque), [220 250 305 280]);
 
         add_scope_block([model_name '/Current Scope'], [600 70 670 110]);
         add_scope_block([model_name '/Speed Scope'], [600 150 670 190]);
         add_scope_block([model_name '/Torque Scope'], [600 230 670 270]);
         add_scope_block([model_name '/Theta Scope'], [600 310 670 350]);
 
-        add_line(model_name, 'VaIn/1', 'Motor/1', 'autorouting', 'smart');
-        add_line(model_name, 'VbIn/1', 'Motor/2', 'autorouting', 'smart');
-        add_line(model_name, 'VcIn/1', 'Motor/3', 'autorouting', 'smart');
-        add_line(model_name, 'LoadIn/1', 'Motor/4', 'autorouting', 'smart');
+        add_line(model_name, 'DutyA/1', 'DutyABC/1', 'autorouting', 'smart');
+        add_line(model_name, 'DutyB/1', 'DutyABC/2', 'autorouting', 'smart');
+        add_line(model_name, 'DutyC/1', 'DutyABC/3', 'autorouting', 'smart');
+        add_line(model_name, 'DutyABC/1', 'Three Invertor/1', 'autorouting', 'smart');
+        add_line(model_name, 'LoadIn/1', 'Motor/1', 'autorouting', 'smart');
         add_line(model_name, 'Motor/1', 'Current Scope/1', 'autorouting', 'smart');
         add_line(model_name, 'Motor/4', 'Speed Scope/1', 'autorouting', 'smart');
         add_line(model_name, 'Motor/5', 'Torque Scope/1', 'autorouting', 'smart');
         add_line(model_name, 'Motor/6', 'Theta Scope/1', 'autorouting', 'smart');
+        connect_subsystem_conserving_ports(model_name, [model_name '/Three Invertor'], [model_name '/Motor']);
 
     case 'measure'
         add_block('built-in/Subsystem', [model_name '/Measure']);
@@ -386,7 +449,7 @@ add_line(model_name, 'CmdThrottle/1', 'Signal In/4', 'autorouting', 'smart');
 
 add_line(model_name, 'Signal In/1', 'FOC Controller/6', 'autorouting', 'smart');
 add_line(model_name, 'Signal In/2', 'FOC Controller/7', 'autorouting', 'smart');
-add_line(model_name, 'Signal In/3', 'Motor/4', 'autorouting', 'smart');
+add_line(model_name, 'Signal In/3', 'Motor/1', 'autorouting', 'smart');
 add_line(model_name, 'Signal In/1', 'Thro/2', 'autorouting', 'smart');
 add_line(model_name, 'Signal In/4', 'Thro/3', 'autorouting', 'smart');
 add_line(model_name, 'Thro/1', 'FOC Controller/8', 'autorouting', 'smart');
@@ -401,10 +464,7 @@ add_line(model_name, 'IdMaxRt/1', 'FOC Controller/16', 'autorouting', 'smart');
 add_line(model_name, 'IqMaxRt/1', 'FOC Controller/17', 'autorouting', 'smart');
 
 add_line(model_name, 'FOC Controller/1', 'Three Invertor/1', 'autorouting', 'smart');
-
-add_line(model_name, 'Three Invertor/1', 'Motor/1', 'autorouting', 'smart');
-add_line(model_name, 'Three Invertor/2', 'Motor/2', 'autorouting', 'smart');
-add_line(model_name, 'Three Invertor/3', 'Motor/3', 'autorouting', 'smart');
+connect_subsystem_conserving_ports(model_name, [model_name '/Three Invertor'], [model_name '/Motor']);
 
 add_line(model_name, 'Motor/1', 'Measure/1', 'autorouting', 'smart');
 add_line(model_name, 'Motor/2', 'Measure/2', 'autorouting', 'smart');
@@ -598,37 +658,199 @@ add_block('built-in/Outport', [subsys '/Va'], 'Port', '1');
 add_block('built-in/Outport', [subsys '/Vb'], 'Port', '2');
 add_block('built-in/Outport', [subsys '/Vc'], 'Port', '3');
 
-add_block('built-in/Constant', [subsys '/Vdc'], ...
-    'Value', num2str(inv_params.Vdc), ...
-    'Position', [80 150 130 170]);
-
 if isfield(inv_params, 'Tsw') && ~isempty(inv_params.Tsw)
     Ts_power = inv_params.Tsw;
 else
     Ts_power = 1 / inv_params.fsw;
 end
 
+dead_time = max(get_struct_field_or_default(inv_params, 'dead_time', 0.0), 0.0);
+gate_drive_voltage = get_struct_field_or_default(inv_params, 'gate_drive_voltage', 10.0);
+mosfet_vth = get_struct_field_or_default(inv_params, 'mosfet_vth', 2.0);
+mosfet_rds = get_struct_field_or_default(inv_params, 'mosfet_rds', 1e-2);
+mosfet_goff = get_struct_field_or_default(inv_params, 'mosfet_goff', 1e-6);
+mosfet_diode_vf = get_struct_field_or_default(inv_params, 'mosfet_diode_vf', 0.8);
+
 add_block('simulink/Discrete/Unit Delay', [subsys '/Duty Delay'], ...
     'SampleTime', num2str(Ts_power, '%.16g'), ...
     'InitialCondition', '0.5', ...
-    'Position', [130 80 165 110]);
-
-add_block('simulink/Math Operations/Product', [subsys '/Modulator'], ...
-    'Inputs', '2', ...
-    'Multiplication', 'Element-wise(.*)', ...
-    'Position', [220 80 270 130]);
-
-add_block('simulink/Signal Routing/Demux', [subsys '/Demux'], ...
+    'Position', [60 80 100 110]);
+add_block('simulink/Discontinuities/Saturation', [subsys '/Duty Clamp'], ...
+    'UpperLimit', '1', ...
+    'LowerLimit', '0', ...
+    'Position', [125 75 180 115]);
+add_block('simulink/Signal Routing/Demux', [subsys '/DemuxDuty'], ...
     'Outputs', '3', ...
-    'Position', [320 70 330 150]);
+    'Position', [210 70 215 165]);
+add_block('simulink/Sources/Repeating Sequence', [subsys '/Carrier'], ...
+    'Position', [115 165 195 195]);
+set_param([subsys '/Carrier'], ...
+    'rep_seq_t', sprintf('[0 %.16g %.16g]', Ts_power / 2, Ts_power), ...
+    'rep_seq_y', '[0 1 0]');
+
+phase_names = {'A', 'B', 'C'};
+phase_y = [40 165 290];
+for idx = 1:3
+    phase = phase_names{idx};
+    phase_lower = lower(phase);
+    y0 = phase_y(idx);
+
+    add_block('simulink/Logic and Bit Operations/Relational Operator', ...
+        [subsys '/Gate' phase '_H'], ...
+        'Operator', '>', ...
+        'Position', [255 y0 305 y0 + 30]);
+    add_block('simulink/Logic and Bit Operations/Logical Operator', ...
+        [subsys '/Gate' phase '_L'], ...
+        'Operator', 'NOT', ...
+        'Position', [335 y0 380 y0 + 30]);
+    add_block('simulink/Signal Attributes/Data Type Conversion', ...
+        [subsys '/Gate' phase '_H_Dbl'], ...
+        'Position', [410 y0 460 y0 + 30]);
+    add_block('simulink/Signal Attributes/Data Type Conversion', ...
+        [subsys '/Gate' phase '_L_Dbl'], ...
+        'Position', [410 y0 + 40 460 y0 + 70]);
+    set_block_params_safe([subsys '/Gate' phase '_H_Dbl'], struct('OutDataTypeStr', 'double'));
+    set_block_params_safe([subsys '/Gate' phase '_L_Dbl'], struct('OutDataTypeStr', 'double'));
+
+    add_block('simulink/Continuous/Transport Delay', ...
+        [subsys '/Gate' phase '_H_Delay'], ...
+        'Position', [485 y0 535 y0 + 30]);
+    add_block('simulink/Continuous/Transport Delay', ...
+        [subsys '/Gate' phase '_L_Delay'], ...
+        'Position', [485 y0 + 40 535 y0 + 70]);
+    set_block_params_safe([subsys '/Gate' phase '_H_Delay'], struct( ...
+        'DelayTime', num2str(dead_time, '%.16g'), ...
+        'InitialOutput', '0'));
+    set_block_params_safe([subsys '/Gate' phase '_L_Delay'], struct( ...
+        'DelayTime', num2str(dead_time, '%.16g'), ...
+        'InitialOutput', '0'));
+
+    add_block('simulink/Math Operations/Product', ...
+        [subsys '/Gate' phase '_H_Final'], ...
+        'Position', [560 y0 610 y0 + 30]);
+    add_block('simulink/Math Operations/Product', ...
+        [subsys '/Gate' phase '_L_Final'], ...
+        'Position', [560 y0 + 40 610 y0 + 70]);
+
+    add_block('simulink/Math Operations/Gain', ...
+        [subsys '/Gate' phase '_H_Drive'], ...
+        'Gain', num2str(gate_drive_voltage, '%.16g'), ...
+        'Position', [635 y0 685 y0 + 30]);
+    add_block('simulink/Math Operations/Gain', ...
+        [subsys '/Gate' phase '_L_Drive'], ...
+        'Gain', num2str(gate_drive_voltage, '%.16g'), ...
+        'Position', [635 y0 + 40 685 y0 + 70]);
+
+    add_reference_block_with_fallback([subsys '/Gate' phase '_H_PS'], {
+        'nesl_utility/Simulink-PS Converter'
+    }, [715 y0 765 y0 + 30]);
+    add_reference_block_with_fallback([subsys '/Gate' phase '_L_PS'], {
+        'nesl_utility/Simulink-PS Converter'
+    }, [715 y0 + 40 765 y0 + 70]);
+    set_block_params_safe([subsys '/Gate' phase '_H_PS'], struct('Unit', 'V'));
+    set_block_params_safe([subsys '/Gate' phase '_L_PS'], struct('Unit', 'V'));
+
+    add_reference_block_with_fallback([subsys '/MOSFET ' phase '(H)'], {
+        'ee_lib/Semiconductors & Converters/MOSFET (Ideal, Switching)'
+    }, [805 y0 - 25 885 y0 + 35]);
+    add_reference_block_with_fallback([subsys '/MOSFET ' phase '(L)'], {
+        'ee_lib/Semiconductors & Converters/MOSFET (Ideal, Switching)'
+    }, [805 y0 + 45 885 y0 + 105]);
+    set_block_params_safe([subsys '/MOSFET ' phase '(H)'], struct( ...
+        'Vth', num2str(mosfet_vth, '%.16g'), ...
+        'Rds', num2str(mosfet_rds, '%.16g'), ...
+        'Goff', num2str(mosfet_goff, '%.16g'), ...
+        'diode_Vf', num2str(mosfet_diode_vf, '%.16g')));
+    set_block_params_safe([subsys '/MOSFET ' phase '(L)'], struct( ...
+        'Vth', num2str(mosfet_vth, '%.16g'), ...
+        'Rds', num2str(mosfet_rds, '%.16g'), ...
+        'Goff', num2str(mosfet_goff, '%.16g'), ...
+        'diode_Vf', num2str(mosfet_diode_vf, '%.16g')));
+
+    add_reference_block_with_fallback([subsys '/Voltage Sensor ' phase], {
+        'ee_lib/Sensors & Transducers/Voltage Sensor', ...
+        'fl_lib/Electrical/Electrical Sensors/Voltage Sensor'
+    }, [935 y0 - 15 985 y0 + 45]);
+    add_reference_block_with_fallback([subsys '/V' phase_lower ' PS2SL'], {
+        'nesl_utility/PS-Simulink Converter'
+    }, [1030 y0 1090 y0 + 30]);
+    set_block_params_safe([subsys '/V' phase_lower ' PS2SL'], struct('Unit', 'V'));
+
+    add_line(subsys, sprintf('DemuxDuty/%d', idx), ['Gate' phase '_H/1']);
+    add_line(subsys, 'Carrier/1', ['Gate' phase '_H/2']);
+    add_line(subsys, ['Gate' phase '_H/1'], ['Gate' phase '_L/1']);
+    add_line(subsys, ['Gate' phase '_H/1'], ['Gate' phase '_H_Dbl/1']);
+    add_line(subsys, ['Gate' phase '_L/1'], ['Gate' phase '_L_Dbl/1']);
+    add_line(subsys, ['Gate' phase '_H_Dbl/1'], ['Gate' phase '_H_Delay/1']);
+    add_line(subsys, ['Gate' phase '_L_Dbl/1'], ['Gate' phase '_L_Delay/1']);
+    add_line(subsys, ['Gate' phase '_H_Dbl/1'], ['Gate' phase '_H_Final/1']);
+    add_line(subsys, ['Gate' phase '_H_Delay/1'], ['Gate' phase '_H_Final/2']);
+    add_line(subsys, ['Gate' phase '_L_Dbl/1'], ['Gate' phase '_L_Final/1']);
+    add_line(subsys, ['Gate' phase '_L_Delay/1'], ['Gate' phase '_L_Final/2']);
+    add_line(subsys, ['Gate' phase '_H_Final/1'], ['Gate' phase '_H_Drive/1']);
+    add_line(subsys, ['Gate' phase '_L_Final/1'], ['Gate' phase '_L_Drive/1']);
+    add_line(subsys, ['Gate' phase '_H_Drive/1'], ['Gate' phase '_H_PS/1']);
+    add_line(subsys, ['Gate' phase '_L_Drive/1'], ['Gate' phase '_L_PS/1']);
+    add_line(subsys, ['V' phase_lower ' PS2SL/1'], ['V' phase_lower '/1']);
+end
+
+add_reference_block_with_fallback([subsys '/Phase Splitter'], {
+    'ee_lib/Connectors & References/Phase Splitter'
+}, [1120 165 1185 235]);
+add_reference_block_with_fallback([subsys '/abc'], {
+    'nesl_utility/Connection Port'
+}, [1265 185 1295 215]);
+set_block_params_safe([subsys '/abc'], struct('Side', 'Right'));
+
+add_reference_block_with_fallback([subsys '/DC Voltage Source'], {
+    'fl_lib/Electrical/Electrical Sources/DC Voltage Source'
+}, [610 365 675 420]);
+set_block_params_safe([subsys '/DC Voltage Source'], struct( ...
+    'v0', num2str(inv_params.Vdc, '%.16g'), ...
+    'v0_unit', 'V'));
+add_reference_block_with_fallback([subsys '/Electrical Reference'], {
+    'fl_lib/Electrical/Electrical Elements/Electrical Reference'
+}, [710 405 760 435]);
+add_reference_block_with_fallback([subsys '/Solver Configuration'], {
+    'nesl_utility/Solver Configuration'
+}, [800 400 860 435]);
 
 add_line(subsys, 'duty_abc/1', 'Duty Delay/1');
-add_line(subsys, 'Duty Delay/1', 'Modulator/1');
-add_line(subsys, 'Vdc/1', 'Modulator/2');
-add_line(subsys, 'Modulator/1', 'Demux/1');
-add_line(subsys, 'Demux/1', 'Va/1');
-add_line(subsys, 'Demux/2', 'Vb/1');
-add_line(subsys, 'Demux/3', 'Vc/1');
+add_line(subsys, 'Duty Delay/1', 'Duty Clamp/1');
+add_line(subsys, 'Duty Clamp/1', 'DemuxDuty/1');
+
+ph_abc = get_param([subsys '/abc'], 'PortHandles');
+ph_split = get_param([subsys '/Phase Splitter'], 'PortHandles');
+ph_vdc = get_param([subsys '/DC Voltage Source'], 'PortHandles');
+ph_eref = get_param([subsys '/Electrical Reference'], 'PortHandles');
+ph_solver = get_param([subsys '/Solver Configuration'], 'PortHandles');
+
+add_line(subsys, ph_split.LConn(1), ph_abc.RConn(1), 'autorouting', 'smart');
+add_line(subsys, ph_vdc.RConn(1), ph_eref.LConn(1), 'autorouting', 'smart');
+add_line(subsys, ph_vdc.RConn(1), ph_solver.RConn(1), 'autorouting', 'smart');
+
+for idx = 1:3
+    phase = phase_names{idx};
+    phase_lower = lower(phase);
+    ph_gate_h = get_param([subsys '/Gate' phase '_H_PS'], 'PortHandles');
+    ph_gate_l = get_param([subsys '/Gate' phase '_L_PS'], 'PortHandles');
+    ph_mos_h = get_param([subsys '/MOSFET ' phase '(H)'], 'PortHandles');
+    ph_mos_l = get_param([subsys '/MOSFET ' phase '(L)'], 'PortHandles');
+    ph_sensor = get_param([subsys '/Voltage Sensor ' phase], 'PortHandles');
+    ph_vout = get_param([subsys '/V' phase_lower ' PS2SL'], 'PortHandles');
+
+    add_line(subsys, ph_gate_h.RConn(1), ph_mos_h.LConn(1), 'autorouting', 'smart');
+    add_line(subsys, ph_gate_l.RConn(1), ph_mos_l.LConn(1), 'autorouting', 'smart');
+
+    add_line(subsys, ph_vdc.LConn(1), ph_mos_h.RConn(1), 'autorouting', 'smart');
+    add_line(subsys, ph_mos_h.RConn(2), ph_mos_l.RConn(1), 'autorouting', 'smart');
+    add_line(subsys, ph_mos_h.RConn(2), ph_split.RConn(idx), 'autorouting', 'smart');
+    add_line(subsys, ph_mos_l.RConn(2), ph_vdc.RConn(1), 'autorouting', 'smart');
+
+    add_line(subsys, ph_mos_h.RConn(2), ph_sensor.LConn(1), 'autorouting', 'smart');
+    add_line(subsys, ph_vdc.RConn(1), ph_sensor.RConn(2), 'autorouting', 'smart');
+    add_line(subsys, ph_sensor.RConn(1), ph_vout.LConn(1), 'autorouting', 'smart');
+end
 end
 
 function create_foc_controller_subsystem(subsys, ctrl_params, inv_params, motor_params, sim_params)
@@ -752,10 +974,7 @@ add_line(subsys, 'Demux_outputs/5', 'iq_meas/1');
 end
 
 function create_pmsm_subsystem(subsys, motor_params)
-add_block('built-in/Inport', [subsys '/Va'], 'Port', '1');
-add_block('built-in/Inport', [subsys '/Vb'], 'Port', '2');
-add_block('built-in/Inport', [subsys '/Vc'], 'Port', '3');
-add_block('built-in/Inport', [subsys '/Te_load'], 'Port', '4');
+add_block('built-in/Inport', [subsys '/Te_load'], 'Port', '1');
 
 add_block('built-in/Outport', [subsys '/ia'], 'Port', '1');
 add_block('built-in/Outport', [subsys '/ib'], 'Port', '2');
@@ -764,25 +983,15 @@ add_block('built-in/Outport', [subsys '/omega_m'], 'Port', '4');
 add_block('built-in/Outport', [subsys '/Te'], 'Port', '5');
 add_block('built-in/Outport', [subsys '/theta_m'], 'Port', '6');
 
-% Simulink to physical signal adapters for three-phase voltage and load torque.
-add_block('simulink/Signal Routing/Mux', [subsys '/MuxVabc'], ...
-    'Inputs', '3', 'Position', [90 65 95 155]);
 add_block('simulink/Sinks/Terminator', [subsys '/LoadUnused'], ...
     'Position', [115 210 135 230]);
 
-add_reference_block_with_fallback([subsys '/Vabc2PS'], {
-    'nesl_utility/Simulink-PS Converter'
-}, [170 90 220 130]);
-
-set_block_params_safe([subsys '/Vabc2PS'], struct('Unit', 'V'));
+add_reference_block_with_fallback([subsys '/abc'], {
+    'nesl_utility/Connection Port'
+}, [55 120 85 150]);
+set_block_params_safe([subsys '/abc'], struct('Side', 'Left'));
 
 % Core Simscape machine and converters modeled after local PMSM example.
-add_reference_block_with_fallback([subsys '/Solver Configuration'], {
-    'nesl_utility/Solver Configuration'
-}, [40 300 95 335]);
-add_reference_block_with_fallback([subsys '/Electrical Reference'], {
-    'fl_lib/Electrical/Electrical Elements/Electrical Reference'
-}, [155 310 205 340]);
 add_reference_block_with_fallback([subsys '/Mechanical Reference'], {
     'fl_lib/Mechanical/Rotational Elements/Mechanical Rotational Reference'
 }, [530 310 590 340]);
@@ -799,39 +1008,33 @@ set_block_params_safe([subsys '/Rotational Friction'], struct( ...
     'brkwy_trq', '1e-9', ...
     'Col_trq', '1e-9'));
 
-add_reference_block_with_fallback([subsys '/ThreePhase Controlled Voltage'], {
-    'ee_lib/Sources/Controlled Voltage Source (Three-Phase)', ...
-    'ee_lib/Sources & Subsystems/Controlled Voltage Source (Three-Phase)', ...
-    'ee_lib/Sources/Three-Phase Sources/Controlled Voltage Source (Three-Phase)'
-}, [250 90 340 180]);
-
 add_reference_block_with_fallback([subsys '/Current Sensor'], {
     'ee_lib/Sensors & Transducers/Current Sensor (Three-Phase)'
-}, [370 95 455 175]);
+}, [150 95 235 175]);
 
 add_reference_block_with_fallback([subsys '/PMSM'], {
     'ee_lib/Electromechanical/Permanent Magnet/PMSM'
-}, [490 85 595 185]);
+}, [300 85 405 185]);
 
 add_reference_block_with_fallback([subsys '/Ideal Torque Sensor'], {
     'fl_lib/Mechanical/Mechanical Sensors/Ideal Torque Sensor'
-}, [640 85 710 150]);
+}, [450 85 520 150]);
 add_reference_block_with_fallback([subsys '/Motion Sensor'], {
     'fl_lib/Mechanical/Mechanical Sensors/Ideal Rotational Motion Sensor'
-}, [760 85 825 155]);
+}, [575 85 640 155]);
 
 add_reference_block_with_fallback([subsys '/CurrentPS2SL'], {
     'nesl_utility/PS-Simulink Converter'
-}, [500 220 560 255]);
+}, [275 220 335 255]);
 add_reference_block_with_fallback([subsys '/TorquePS2SL'], {
     'nesl_utility/PS-Simulink Converter'
-}, [700 220 760 255]);
+}, [525 220 585 255]);
 add_reference_block_with_fallback([subsys '/OmegaPS2SL'], {
     'nesl_utility/PS-Simulink Converter'
-}, [790 220 850 255]);
+}, [615 220 675 255]);
 add_reference_block_with_fallback([subsys '/ThetaPS2SL'], {
     'nesl_utility/PS-Simulink Converter'
-}, [860 220 920 255]);
+}, [705 220 765 255]);
 
 set_block_params_safe([subsys '/CurrentPS2SL'], struct('Unit', 'A'));
 set_block_params_safe([subsys '/TorquePS2SL'], struct('Unit', 'N*m'));
@@ -839,7 +1042,7 @@ set_block_params_safe([subsys '/OmegaPS2SL'], struct('Unit', 'rad/s'));
 set_block_params_safe([subsys '/ThetaPS2SL'], struct('Unit', 'rad'));
 
 add_block('simulink/Signal Routing/Demux', [subsys '/DemuxIabc'], ...
-    'Outputs', '3', 'Position', [600 210 605 280]);
+    'Outputs', '3', 'Position', [375 210 380 280]);
 
 set_block_params_safe([subsys '/PMSM'], struct( ...
     'nPolePairs', num2str(motor_params.p, '%.6g'), ...
@@ -856,10 +1059,6 @@ set_block_params_safe([subsys '/PMSM'], struct( ...
     'angular_position', '0', ...
     'angular_position_unit', 'rad'));
 
-add_line(subsys, 'Va/1', 'MuxVabc/1');
-add_line(subsys, 'Vb/1', 'MuxVabc/2');
-add_line(subsys, 'Vc/1', 'MuxVabc/3');
-add_line(subsys, 'MuxVabc/1', 'Vabc2PS/1');
 add_line(subsys, 'Te_load/1', 'LoadUnused/1');
 
 add_line(subsys, 'CurrentPS2SL/1', 'DemuxIabc/1');
@@ -870,10 +1069,7 @@ add_line(subsys, 'OmegaPS2SL/1', 'omega_m/1');
 add_line(subsys, 'TorquePS2SL/1', 'Te/1');
 add_line(subsys, 'ThetaPS2SL/1', 'theta_m/1');
 
-ph_vabc2ps = get_param([subsys '/Vabc2PS'], 'PortHandles');
-ph_solver = get_param([subsys '/Solver Configuration'], 'PortHandles');
-ph_eref = get_param([subsys '/Electrical Reference'], 'PortHandles');
-ph_vsrc = get_param([subsys '/ThreePhase Controlled Voltage'], 'PortHandles');
+ph_abc = get_param([subsys '/abc'], 'PortHandles');
 ph_isens = get_param([subsys '/Current Sensor'], 'PortHandles');
 ph_pmsm = get_param([subsys '/PMSM'], 'PortHandles');
 ph_tsens = get_param([subsys '/Ideal Torque Sensor'], 'PortHandles');
@@ -885,11 +1081,8 @@ ph_t2sl = get_param([subsys '/TorquePS2SL'], 'PortHandles');
 ph_w2sl = get_param([subsys '/OmegaPS2SL'], 'PortHandles');
 ph_th2sl = get_param([subsys '/ThetaPS2SL'], 'PortHandles');
 
-% Electrical network: control signal -> 3-phase source -> current sensor -> PMSM.
-add_line(subsys, ph_vabc2ps.RConn(1), ph_vsrc.LConn(1), 'autorouting', 'smart');
-add_line(subsys, ph_eref.LConn(1), ph_vsrc.LConn(2), 'autorouting', 'smart');
-add_line(subsys, ph_solver.RConn(1), ph_vsrc.LConn(2), 'autorouting', 'smart');
-add_line(subsys, ph_vsrc.RConn(1), ph_isens.LConn(1), 'autorouting', 'smart');
+% Electrical network: inverter phase bus -> current sensor -> PMSM.
+add_line(subsys, ph_abc.RConn(1), ph_isens.LConn(1), 'autorouting', 'smart');
 add_line(subsys, ph_isens.RConn(2), ph_pmsm.LConn(1), 'autorouting', 'smart');
 add_line(subsys, ph_isens.RConn(1), ph_i2sl.LConn(1), 'autorouting', 'smart');
 
@@ -906,6 +1099,28 @@ add_line(subsys, ph_pmsm.RConn(2), ph_mref.LConn(1), 'autorouting', 'smart');
 add_line(subsys, ph_tsens.RConn(2), ph_t2sl.LConn(1), 'autorouting', 'smart');
 add_line(subsys, ph_msens.RConn(2), ph_w2sl.LConn(1), 'autorouting', 'smart');
 add_line(subsys, ph_msens.RConn(3), ph_th2sl.LConn(1), 'autorouting', 'smart');
+end
+
+function connect_subsystem_conserving_ports(parent_system, src_block, dst_block)
+ph_src = get_param(src_block, 'PortHandles');
+ph_dst = get_param(dst_block, 'PortHandles');
+
+if ~isfield(ph_src, 'RConn') || isempty(ph_src.RConn)
+    error('Source block %s does not expose a right-side conserving port.', src_block);
+end
+if ~isfield(ph_dst, 'LConn') || isempty(ph_dst.LConn)
+    error('Destination block %s does not expose a left-side conserving port.', dst_block);
+end
+
+add_line(parent_system, ph_src.RConn(1), ph_dst.LConn(1), 'autorouting', 'smart');
+end
+
+function value = get_struct_field_or_default(data_struct, field_name, default_value)
+if isstruct(data_struct) && isfield(data_struct, field_name) && ~isempty(data_struct.(field_name))
+    value = data_struct.(field_name);
+else
+    value = default_value;
+end
 end
 
 function create_measurement_subsystem(subsys, motor_params)
